@@ -136,6 +136,10 @@ export const agent_handoffs = pgTable('agent_handoffs', {
   context: text('context'),                  // from_agent の最新出力（エンジンがセット）
   result: text('result'),                    // to_agent の実行結果
   error: text('error'),                      // 失敗時エラー内容
+  // チェーン機能（A→B→C 多段連鎖）
+  chain_id: uuid('chain_id'),                // 連鎖グループID（先頭 handoff の id）
+  next_agent_id: uuid('next_agent_id').references(() => agents.id, { onDelete: 'set null' }), // 次の引き継ぎ先
+  next_prompt: text('next_prompt'),          // 次ステップのプロンプト（省略時は同じ prompt）
   created_at: timestamp('created_at').defaultNow(),
   started_at: timestamp('started_at'),
   completed_at: timestamp('completed_at'),
@@ -144,6 +148,7 @@ export const agent_handoffs = pgTable('agent_handoffs', {
   idxStatus: index('idx_handoffs_status').on(table.status),
   idxFromAgent: index('idx_handoffs_from_agent').on(table.from_agent_id),
   idxToAgent: index('idx_handoffs_to_agent').on(table.to_agent_id),
+  idxChain: index('idx_handoffs_chain').on(table.chain_id),
 }));
 
 // H11: principal_permission_grants

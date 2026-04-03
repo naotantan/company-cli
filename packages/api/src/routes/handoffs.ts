@@ -23,18 +23,23 @@ handoffsRouter.get('/', async (req, res, next) => {
   try {
     const { limit, offset } = sanitizePagination(req.query.limit, req.query.offset);
     const statusFilter = typeof req.query.status === 'string' ? req.query.status : undefined;
+    const chainIdFilter = typeof req.query.chain_id === 'string' ? req.query.chain_id : undefined;
 
     const db = getDb();
 
-    // status フィルタあり/なしで条件を切り替え
-    const whereClause = (statusFilter && VALID_STATUSES.includes(statusFilter as typeof VALID_STATUSES[number]))
-      ? and(eq(agent_handoffs.company_id, req.companyId!), eq(agent_handoffs.status, statusFilter))
-      : eq(agent_handoffs.company_id, req.companyId!);
+    // フィルタ条件を構築（status / chain_id を組み合わせ）
+    const conditions = [eq(agent_handoffs.company_id, req.companyId!)];
+    if (statusFilter && VALID_STATUSES.includes(statusFilter as typeof VALID_STATUSES[number])) {
+      conditions.push(eq(agent_handoffs.status, statusFilter));
+    }
+    if (chainIdFilter) {
+      conditions.push(eq(agent_handoffs.chain_id, chainIdFilter));
+    }
 
     const rows = await db
       .select()
       .from(agent_handoffs)
-      .where(whereClause)
+      .where(and(...conditions))
       .limit(limit)
       .offset(offset);
 
@@ -44,14 +49,16 @@ handoffsRouter.get('/', async (req, res, next) => {
   }
 });
 
-// POST /api/handoffs — 引き継ぎ登録
+// POST /api/handoffs — 引き継ぎ登録（チェーン対応）
 handoffsRouter.post('/', async (req, res, next) => {
   try {
-    const { from_agent_id, to_agent_id, prompt, issue_id } = req.body as {
+    const { from_agent_id, to_agent_id, prompt, issue_id, next_agent_id, next_prompt } = req.body as {
       from_agent_id?: string;
       to_agent_id?: string;
       prompt?: string;
       issue_id?: string;
+      next_agent_id?: string;   // チェーン: 次の引き継ぎ先
+      next_prompt?: string;     // チェーン: 次ステップのプロンプト
     };
 
     // 必須チェック
@@ -78,6 +85,15 @@ handoffsRouter.post('/', async (req, res, next) => {
       return;
     }
 
+    // next_agent_id が指定されている場合はテナント確認
+    if (next_agent_id) {
+      const nextAgent = await findOwnedAgent(req.companyId!, next_agent_id);
+      if (!nextAgent) {
+        res.status(400).json({ error: 'validation_failed', message: 'next_agent_id が見つからないか、アクセス権がありません' });
+        return;
+      }
+    }
+
     const db = getDb();
     const [created] = await db.insert(agent_handoffs).values({
       company_id: req.companyId!,
@@ -86,9 +102,16 @@ handoffsRouter.post('/', async (req, res, next) => {
       issue_id: issue_id ?? null,
       status: 'pending',
       prompt: sanitizeString(prompt),
+      next_agent_id: next_agent_id ?? null,
+      next_prompt: next_prompt ? sanitizeString(next_prompt) : null,
     }).returning();
 
-    res.status(201).json({ data: created });
+    // chain_id = 先頭の handoff id 自身（後続は engine がセット）
+    await db.update(agent_handoffs)
+      .set({ chain_id: created.id })
+      .where(eq(agent_handoffs.id, created.id));
+
+    res.status(201).json({ data: { ...created, chain_id: created.id } });
   } catch (err) {
     next(err);
   }

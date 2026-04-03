@@ -628,6 +628,10 @@ All authenticated requests require: `Authorization: Bearer <api_key>`
 | GET | `/api/activity` | Retrieve full activity log |
 | GET/PATCH | `/api/settings` | Organization settings (agent mode, API key) |
 | GET/PATCH | `/api/org` | Organization info (name, description) |
+| POST/GET | `/api/tasks` | Execute a task directly on an agent / list history |
+| POST/GET | `/api/handoffs` | Register / list agent-to-agent handoffs |
+| GET | `/api/handoffs/:id` | Handoff detail |
+| PATCH | `/api/handoffs/:id/cancel` | Cancel a pending handoff |
 
 #### `POST /api/costs/budget` Input Rules
 
@@ -644,6 +648,59 @@ All authenticated requests require: `Authorization: Bearer <api_key>`
 | `claude_api` | Calls Anthropic API directly | `config.apiKey` (required) |
 | `gemini_local` | Google Gemini (API key) | `config.apiKey` required — pay-as-you-go |
 | `codex_local` | OpenAI Codex CLI (subscription) | ChatGPT Pro/Plus plan — `npm install -g @openai/codex` |
+
+---
+
+### Agent Tasks & Handoffs
+
+#### Direct Task Execution
+
+Send a prompt directly to an agent and receive the result synchronously:
+
+```bash
+curl -X POST http://localhost:3000/api/tasks \
+  -H "Authorization: Bearer <api_key>" \
+  -H "Content-Type: application/json" \
+  -d '{"agent_id": "<uuid>", "prompt": "Summarize the project status"}'
+```
+
+Response includes `output`, `finish_reason`, `started_at`, and `completed_at`.
+
+#### Agent-to-Agent Handoff
+
+Hand off a task from one agent to another. The result of the first agent becomes the `context` for the second:
+
+```bash
+curl -X POST http://localhost:3000/api/handoffs \
+  -H "Authorization: Bearer <api_key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from_agent_id": "<agent-a-uuid>",
+    "to_agent_id": "<agent-b-uuid>",
+    "prompt": "Write a one-sentence summary of the previous output"
+  }'
+```
+
+The handoff engine runs every 30 seconds and processes `pending` handoffs automatically.
+
+#### Handoff Chains (A → B → C)
+
+Chain multiple agents by specifying `next_agent_id`. Each agent's output becomes the next agent's context:
+
+```bash
+curl -X POST http://localhost:3000/api/handoffs \
+  -H "Authorization: Bearer <api_key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from_agent_id": "<agent-a-uuid>",
+    "to_agent_id": "<agent-b-uuid>",
+    "prompt": "Step 1: research the topic",
+    "next_agent_id": "<agent-c-uuid>",
+    "next_prompt": "Step 2: write a report based on the research"
+  }'
+```
+
+Track the entire chain with `GET /api/handoffs?chain_id=<chain_id>`.
 
 ---
 

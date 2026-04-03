@@ -1,0 +1,276 @@
+openapi: 3.0.3
+info:
+  title: company-cli API
+  version: 0.1.0
+  description: Multi-tenant AI agent management backend
+
+servers:
+  - url: http://localhost:3000
+    description: Local development
+
+security:
+  - BearerAuth: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        message: { type: string }
+    Agent:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        company_id: { type: string, format: uuid }
+        name: { type: string }
+        type: { type: string, enum: [claude_local, claude_api, codex_local, gemini_local, openclaw_gateway, opencode_local, pi_local] }
+        enabled: { type: boolean }
+        config: { type: object, nullable: true }
+        created_at: { type: string, format: date-time }
+        last_heartbeat_at: { type: string, format: date-time, nullable: true }
+    TaskResult:
+      type: object
+      properties:
+        session_id: { type: string, format: uuid }
+        agent_id: { type: string, format: uuid }
+        output: { type: string }
+        finish_reason: { type: string, enum: [complete, max_tokens, error] }
+        error: { type: string, nullable: true }
+        started_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
+    Handoff:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        company_id: { type: string, format: uuid }
+        from_agent_id: { type: string, format: uuid }
+        to_agent_id: { type: string, format: uuid }
+        issue_id: { type: string, format: uuid, nullable: true }
+        status: { type: string, enum: [pending, running, completed, failed, cancelled] }
+        prompt: { type: string }
+        context: { type: string, nullable: true }
+        result: { type: string, nullable: true }
+        error: { type: string, nullable: true }
+        chain_id: { type: string, format: uuid, nullable: true }
+        next_agent_id: { type: string, format: uuid, nullable: true }
+        next_prompt: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        started_at: { type: string, format: date-time, nullable: true }
+        completed_at: { type: string, format: date-time, nullable: true }
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  database: { type: string }
+                  timestamp: { type: string }
+
+  /api/auth/register:
+    post:
+      summary: Register organization and user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, name, companyName]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                name: { type: string }
+                companyName: { type: string }
+      responses:
+        '201':
+          description: Registration successful — includes one-time apiKey
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /api/auth/login:
+    post:
+      summary: Login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        '200':
+          description: Login successful
+        '401':
+          description: Invalid credentials
+
+  /api/agents:
+    get:
+      summary: List agents
+      responses:
+        '200':
+          description: Agent list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Agent' }
+    post:
+      summary: Register agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, type]
+              properties:
+                name: { type: string }
+                type: { type: string }
+                description: { type: string }
+                config: { type: object }
+      responses:
+        '201':
+          description: Created — includes one-time agentApiKey
+        '400':
+          description: Validation error
+
+  /api/tasks:
+    post:
+      summary: Execute task directly on an agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_id, prompt]
+              properties:
+                agent_id: { type: string, format: uuid }
+                prompt: { type: string }
+                context: { type: string }
+      responses:
+        '200':
+          description: Task result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/TaskResult' }
+        '400':
+          description: Validation error or agent disabled
+    get:
+      summary: List task execution history
+      parameters:
+        - in: query
+          name: agent_id
+          schema: { type: string, format: uuid }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+        - in: query
+          name: offset
+          schema: { type: integer, default: 0 }
+      responses:
+        '200':
+          description: Session list
+
+  /api/handoffs:
+    post:
+      summary: Register agent-to-agent handoff (chain supported)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from_agent_id, to_agent_id, prompt]
+              properties:
+                from_agent_id: { type: string, format: uuid }
+                to_agent_id: { type: string, format: uuid }
+                prompt: { type: string }
+                issue_id: { type: string, format: uuid }
+                next_agent_id: { type: string, format: uuid, description: "Chain: next agent after to_agent completes" }
+                next_prompt: { type: string, description: "Chain: prompt for next step (defaults to same prompt)" }
+      responses:
+        '201':
+          description: Handoff registered (status=pending)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Handoff' }
+        '400':
+          description: Validation error
+    get:
+      summary: List handoffs
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: [pending, running, completed, failed, cancelled] }
+        - in: query
+          name: chain_id
+          schema: { type: string, format: uuid, description: "Filter by chain group" }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+        - in: query
+          name: offset
+          schema: { type: integer, default: 0 }
+      responses:
+        '200':
+          description: Handoff list
+
+  /api/handoffs/{id}:
+    get:
+      summary: Get handoff detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Handoff object
+        '404':
+          description: Not found
+
+  /api/handoffs/{id}/cancel:
+    patch:
+      summary: Cancel a pending handoff
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Cancelled
+        '409':
+          description: Not in pending state

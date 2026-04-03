@@ -201,16 +201,34 @@ async function processHandoffs(): Promise<void> {
           context: context ?? undefined,
         });
 
+        const finalStatus = response.finishReason === 'error' ? 'failed' : 'completed';
+        const finalResult = response.output || null;
+
         // 成功: completed に更新
         await db.update(agent_handoffs)
           .set({
-            status: response.finishReason === 'error' ? 'failed' : 'completed',
-            result: response.output || null,
+            status: finalStatus,
+            result: finalResult,
             context: context ?? null,
             error: response.error ?? null,
             completed_at: new Date(),
           })
           .where(eq(agent_handoffs.id, handoff.id));
+
+        // チェーン: completed かつ next_agent_id がある場合は次 handoff を自動生成
+        if (finalStatus === 'completed' && handoff.next_agent_id) {
+          await db.insert(agent_handoffs).values({
+            company_id: handoff.company_id,
+            from_agent_id: handoff.to_agent_id,          // 前の to が次の from
+            to_agent_id: handoff.next_agent_id,
+            issue_id: handoff.issue_id ?? null,
+            status: 'pending',
+            prompt: handoff.next_prompt ?? handoff.prompt, // next_prompt 優先
+            context: finalResult,                          // 前の result を context に
+            chain_id: handoff.chain_id ?? handoff.id,     // 連鎖グループID引き継ぎ
+          });
+          console.log(`[HeartbeatEngine] チェーン handoff 生成: ${handoff.to_agent_id} → ${handoff.next_agent_id}`);
+        }
 
       } catch (err) {
         // 失敗: failed に更新
