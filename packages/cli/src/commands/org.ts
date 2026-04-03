@@ -6,11 +6,13 @@ import { getConfig } from '../config.js';
 import { apiRequest, checkAuth } from '../api.js';
 import type { Company } from '@company/shared';
 
+// /api/org/members は company_memberships テーブルを返す（users JOIN なし）
 interface Member {
   id: string;
-  email: string;
-  name: string;
-  role: 'admin' | 'member' | 'viewer';
+  company_id: string;
+  user_id: string;
+  role: string;
+  created_at: string;
 }
 
 export const orgCommand = new Command('org')
@@ -69,17 +71,15 @@ export const orgCommand = new Command('org')
           if (response.data.length === 0) {
             console.log(chalk.gray('メンバーがいません'));
           } else {
-            const maxNameLen = Math.max(...response.data.map((m) => m.name.length), 4);
-            const maxEmailLen = Math.max(...response.data.map((m) => m.email.length), 5);
+            const maxUserIdLen = Math.max(...response.data.map((m) => m.user_id.length), 7);
 
-            console.log(
-              `${'名前'.padEnd(maxNameLen + 2)} ${'メール'.padEnd(maxEmailLen + 2)} ロール`,
-            );
-            console.log('-'.repeat(maxNameLen + maxEmailLen + 20));
+            console.log(`${'ユーザーID'.padEnd(maxUserIdLen + 2)} ロール 作成日`);
+            console.log('-'.repeat(maxUserIdLen + 30));
 
             for (const member of response.data) {
+              const date = new Date(member.created_at).toLocaleDateString('ja-JP');
               console.log(
-                `${member.name.padEnd(maxNameLen + 2)} ${member.email.padEnd(maxEmailLen + 2)} ${member.role}`,
+                `${member.user_id.padEnd(maxUserIdLen + 2)} ${member.role.padEnd(8)} ${date}`,
               );
             }
           }

@@ -19,10 +19,24 @@ async function validateWebhookUrl(url: string): Promise<{ valid: boolean; reason
     return { valid: false, reason: 'url の形式が不正です' };
   }
 
+  // URL.hostname はIPv6を [::ffff:c0a8:101] 形式（括弧付き）で返す
+  // isIP() は括弧付きを認識しないため、括弧を除去してから判定する
   const hostname = parsed.hostname;
+  const rawHostname = hostname.startsWith('[') && hostname.endsWith(']')
+    ? hostname.slice(1, -1)
+    : hostname;
+
+  // IPv4-mapped IPv6 を先にチェック（brackets stripped 後のアドレスに適用）
+  const mappedV4 = extractMappedV4(rawHostname);
+  if (mappedV4) {
+    if (isPrivateIp(mappedV4)) {
+      return { valid: false, reason: 'プライベートまたはループバックアドレスへのアクセスは禁止されています' };
+    }
+    return { valid: true };
+  }
 
   // IP アドレスが直接指定された場合はそのままチェック
-  const directIp = isIP(hostname) !== 0 ? hostname : null;
+  const directIp = isIP(rawHostname) !== 0 ? rawHostname : null;
   const ipsToCheck: string[] = [];
 
   if (directIp) {
@@ -49,9 +63,13 @@ async function validateWebhookUrl(url: string): Promise<{ valid: boolean; reason
 
 /** RFC 1918 / ループバック / リンクローカル などプライベートIP判定 */
 function isPrivateIp(ip: string): boolean {
+  // IPv4-mapped IPv6 (::ffff:A.B.C.D or ::ffff:XXXX:XXXX) を IPv4 に変換して再チェック
+  const mappedV4 = extractMappedV4(ip);
+  if (mappedV4) return isPrivateIp(mappedV4);
+
   // IPv4
   const v4Parts = ip.split('.').map(Number);
-  if (v4Parts.length === 4) {
+  if (v4Parts.length === 4 && v4Parts.every(n => !isNaN(n))) {
     const [a, b] = v4Parts;
     if (a === 127) return true;                           // 127.0.0.0/8 ループバック
     if (a === 10) return true;                            // 10.0.0.0/8
@@ -68,6 +86,37 @@ function isPrivateIp(ip: string): boolean {
   if (lower.startsWith('fe80:')) return true;            // リンクローカル
   if (lower.startsWith('fc') || lower.startsWith('fd')) return true; // ULA
   return false;
+}
+
+/**
+ * IPv4-mapped IPv6 アドレスから IPv4 部分を抽出する
+ * URL.hostname は IPv6 アドレスを [::ffff:c0a8:101] 形式（括弧付き hex）で返すため
+ * 括弧除去と hex 変換を行う
+ *
+ * 例: [::ffff:c0a8:101] → 192.168.1.1
+ *     [::ffff:7f00:1]   → 127.0.0.1
+ *     ::ffff:192.168.1.1 → 192.168.1.1（括弧なし形式も対応）
+ */
+function extractMappedV4(ip: string): string | null {
+  // URL.hostname が返す [::ffff:xxxx:xxxx] 形式の括弧を除去
+  const stripped = ip.startsWith('[') && ip.endsWith(']') ? ip.slice(1, -1) : ip;
+  const lower = stripped.toLowerCase();
+  if (!lower.startsWith('::ffff:')) return null;
+  const rest = lower.slice(7); // "::ffff:" を取り除く
+
+  // ドット記法 (::ffff:192.168.1.1)
+  if (rest.includes('.')) return rest;
+
+  // hex 記法 (::ffff:c0a8:101 など)
+  const hexParts = rest.split(':');
+  if (hexParts.length === 2) {
+    const hi = parseInt(hexParts[0], 16);
+    const lo = parseInt(hexParts[1], 16);
+    if (!isNaN(hi) && !isNaN(lo)) {
+      return [(hi >> 8) & 0xff, hi & 0xff, (lo >> 8) & 0xff, lo & 0xff].join('.');
+    }
+  }
+  return null;
 }
 
 export const pluginsRouter: RouterType = Router();

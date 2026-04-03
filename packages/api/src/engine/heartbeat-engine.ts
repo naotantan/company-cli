@@ -9,13 +9,15 @@ import { getDb, agents, heartbeat_runs, heartbeat_run_events, agent_runtime_stat
 import { eq, and } from 'drizzle-orm';
 import type { AgentType } from '@company/shared';
 
-// @company/adapters は ESM のため CJS コンテキストから static import できない
-// dynamic import で使用する。型のみここで定義してパッケージ依存を回避する
+// @company/adapters は ESM のため CJS コンテキストから static import できない。
+// dynamic import で使用する。AdapterConfig は @company/adapters/base.ts と
+// 同一形状を維持する必要がある（乖離防止のため型コメントで出典を明記）。
+// 出典: packages/adapters/src/base.ts AdapterConfig
 type AdapterConfig = {
-  apiKey?: string;
-  baseUrl?: string;
-  model?: string;
-  timeout?: number;
+  apiKey?: string;   // APIキー
+  baseUrl?: string;  // エンドポイントURL上書き
+  model?: string;    // モデル名
+  timeout?: number;  // タイムアウト秒
 };
 
 // ハートビート間隔（デフォルト30秒）
