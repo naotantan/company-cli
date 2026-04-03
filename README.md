@@ -296,6 +296,10 @@ curl -X POST http://localhost:3000/api/auth/register \
 | GET | `/api/activity` | 全操作ログ取得 |
 | GET/PATCH | `/api/settings` | 組織設定（エージェント実行モード・APIキー） |
 | GET/PATCH | `/api/org` | 組織情報の取得・更新 |
+| POST/GET | `/api/tasks` | エージェントにタスクを直接実行・履歴取得 |
+| POST/GET | `/api/handoffs` | エージェント間引き継ぎ登録・一覧 |
+| GET | `/api/handoffs/:id` | 引き継ぎ詳細 |
+| PATCH | `/api/handoffs/:id/cancel` | 引き継ぎキャンセル（pending のみ） |
 
 #### `POST /api/costs/budget` の入力ルール
 
@@ -312,6 +316,59 @@ curl -X POST http://localhost:3000/api/auth/register \
 | `claude_api` | Anthropic APIキーで動作 | `config.apiKey`（必須） |
 | `gemini_local` | Google Gemini（APIキー方式） | `config.apiKey`（必須）・従量課金 |
 | `codex_local` | OpenAI Codex CLI（サブスク方式） | ChatGPT Pro/Plus プラン・`npm install -g @openai/codex` |
+
+---
+
+### タスク直接実行・エージェント間引き継ぎ
+
+#### タスク直接実行
+
+エージェントにプロンプトを投げ、結果を同期で受け取ります:
+
+```bash
+curl -X POST http://localhost:3000/api/tasks \
+  -H "Authorization: Bearer <api_key>" \
+  -H "Content-Type: application/json" \
+  -d '{"agent_id": "<uuid>", "prompt": "プロジェクトの現状を要約してください"}'
+```
+
+#### エージェント間引き継ぎ（Handoff）
+
+Agent A の結果を context として Agent B に自動で渡します。エンジンが 30 秒ごとに `pending` を実行します:
+
+```bash
+curl -X POST http://localhost:3000/api/handoffs \
+  -H "Authorization: Bearer <api_key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from_agent_id": "<agent-a-uuid>",
+    "to_agent_id": "<agent-b-uuid>",
+    "prompt": "前の回答を踏まえて日本語で要約してください"
+  }'
+```
+
+#### 多段チェーン（A → B → C）
+
+`next_agent_id` を指定すると、完了後に自動で次の引き継ぎが生成されます:
+
+```bash
+curl -X POST http://localhost:3000/api/handoffs \
+  -H "Authorization: Bearer <api_key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from_agent_id": "<agent-a-uuid>",
+    "to_agent_id": "<agent-b-uuid>",
+    "prompt": "Step 1: テーマを調査してください",
+    "next_agent_id": "<agent-c-uuid>",
+    "next_prompt": "Step 2: 調査結果をレポートにまとめてください"
+  }'
+```
+
+`GET /api/handoffs?chain_id=<chain_id>` で連鎖全体を追跡できます。
+
+#### API仕様書
+
+完全な OpenAPI 3.0 仕様書: [`docs/openapi.yaml`](docs/openapi.yaml)
 
 ---
 
