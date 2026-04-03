@@ -110,9 +110,9 @@ costsRouter.post('/budget', async (req, res, next) => {
       .insert(budget_policies)
       .values({
         company_id: req.companyId!,
-        limit_amount_usd: String(limit_amount_usd),
+        limit_amount_usd: parseFloat(String(limit_amount_usd)).toFixed(2),
         period,
-        ...(alert_threshold && { alert_threshold: String(alert_threshold) }),
+        ...(alert_threshold && { alert_threshold: parseFloat(String(alert_threshold)).toFixed(2) }),
       })
       .returning();
     res.status(201).json({ data: policy[0] });
