@@ -14,7 +14,7 @@
 
 ```bash
 # リポジトリをクローン
-git clone https://github.com/naotokudo/company-cli.git
+git clone https://github.com/naotantan/company-cli.git
 cd company-cli
 
 # 依存関係のインストール

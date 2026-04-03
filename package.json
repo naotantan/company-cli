@@ -6,13 +6,12 @@
     "dev": "pnpm --filter @company/api dev & pnpm --filter @company/ui dev",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
-    "lint": "pnpm -r lint",
+    "lint": "eslint .",
     "typecheck": "pnpm -r typecheck",
     "db:generate": "pnpm --filter @company/db generate",
     "db:migrate": "pnpm --filter @company/db migrate",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
-    "lint": "eslint .",
     "format": "prettier --write \"packages/*/src/**/*.ts\""
   },
   "devDependencies": {
@@ -38,10 +37,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/naotokudo/company-cli"
+    "url": "https://github.com/naotantan/company-cli"
   },
   "bugs": {
-    "url": "https://github.com/naotokudo/company-cli/issues"
+    "url": "https://github.com/naotantan/company-cli/issues"
   },
   "keywords": [
     "ai",
