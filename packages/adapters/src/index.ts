@@ -1,6 +1,7 @@
 export { BaseAdapter } from './base.js';
 export type { AdapterConfig, TaskRequest, TaskResponse, HeartbeatResponse } from './base.js';
 export { ClaudeLocalAdapter } from './claude-local.js';
+export { ClaudeApiAdapter } from './claude-api.js';
 export { CodexLocalAdapter } from './codex-local.js';
 export { CursorAdapter } from './cursor.js';
 export { GeminiLocalAdapter } from './gemini-local.js';
@@ -12,6 +13,7 @@ import type { AgentType } from '@company/shared';
 import type { AdapterConfig } from './base.js';
 import type { BaseAdapter } from './base.js';
 import { ClaudeLocalAdapter } from './claude-local.js';
+import { ClaudeApiAdapter } from './claude-api.js';
 import { CodexLocalAdapter } from './codex-local.js';
 import { CursorAdapter } from './cursor.js';
 import { GeminiLocalAdapter } from './gemini-local.js';
@@ -22,7 +24,8 @@ import { PiLocalAdapter } from './pi-local.js';
 // アダプターファクトリ — エージェントタイプから適切なアダプターを生成
 export function createAdapter(type: AgentType, config: AdapterConfig): BaseAdapter {
   switch (type) {
-    case 'claude_local': return new ClaudeLocalAdapter(config);
+    case 'claude_local': return new ClaudeLocalAdapter(config);  // サブスクリプション（claude -p CLI）
+    case 'claude_api':   return new ClaudeApiAdapter(config);    // Anthropic API キー（従量課金）
     case 'codex_local': return new CodexLocalAdapter(config);
     case 'cursor': return new CursorAdapter(config);
     case 'gemini_local': return new GeminiLocalAdapter(config);

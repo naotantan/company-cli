@@ -6,6 +6,7 @@
   "exports": {
     ".": "./dist/index.js",
     "./claude-local": "./dist/claude-local.js",
+    "./claude-api": "./dist/claude-api.js",
     "./codex-local": "./dist/codex-local.js",
     "./cursor": "./dist/cursor.js",
     "./gemini-local": "./dist/gemini-local.js",
@@ -19,6 +20,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.82.0",
     "@company/shared": "workspace:*",
     "node-fetch": "^3.3.2"
   },

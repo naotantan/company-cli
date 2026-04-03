@@ -2,8 +2,20 @@ import { Router, type Router as RouterType } from 'express';
 import { getDb, agents, heartbeat_runs, agent_api_keys } from '@company/db';
 import { eq, and, desc } from 'drizzle-orm';
 import { generateApiKey } from '../utils/crypto';
-import { API_KEY_PREFIXES } from '@company/shared';
+import { API_KEY_PREFIXES, type AgentType } from '@company/shared';
 import { sanitizeString } from '../middleware/validate';
+
+// 有効なエージェントタイプ一覧（AgentType ユニオンを配列で保持）
+const VALID_AGENT_TYPES: AgentType[] = [
+  'claude_local',   // Claude サブスクリプション（claude -p CLI、APIキー不要）
+  'claude_api',     // Anthropic API キー（従量課金）
+  'codex_local',
+  'cursor',
+  'gemini_local',
+  'openclaw_gateway',
+  'opencode_local',
+  'pi_local',
+];
 
 export const agentsRouter: RouterType = Router();
 
@@ -31,6 +43,22 @@ agentsRouter.post('/', async (req, res, next) => {
       res.status(400).json({
         error: 'validation_failed',
         message: 'name と type は必須です',
+      });
+      return;
+    }
+    // type が有効な AgentType かチェック
+    if (!VALID_AGENT_TYPES.includes(type as AgentType)) {
+      res.status(400).json({
+        error: 'validation_failed',
+        message: `type が無効です。有効な値: ${VALID_AGENT_TYPES.join(', ')}`,
+      });
+      return;
+    }
+    // claude_api は config.apiKey が必須
+    if (type === 'claude_api' && !config?.apiKey) {
+      res.status(400).json({
+        error: 'validation_failed',
+        message: 'claude_api タイプには config.apiKey（Anthropic API キー）が必要です',
       });
       return;
     }

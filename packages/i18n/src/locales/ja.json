@@ -179,7 +179,19 @@
     "apiKeyName": "キー名",
     "theme": "テーマ",
     "darkMode": "ダークモード",
-    "saved": "設定を保存しました"
+    "saved": "設定を保存しました",
+    "agentMode": "エージェント実行モード",
+    "agentModeDesc": "AIエージェントがタスクを実行する際の課金方式を選択します",
+    "agentModeSubscription": "Claudeサブスクリプション（claude -p CLI）",
+    "agentModeSubscriptionDesc": "追加課金なし。Claudeのサブスクプランで動作します",
+    "agentModeApi": "Anthropic APIキー（従量課金）",
+    "agentModeApiDesc": "入力したAPIキーで直接 Anthropic API を呼び出します",
+    "anthropicApiKey": "Anthropic API キー",
+    "anthropicApiKeyPlaceholder": "sk-ant-...",
+    "anthropicApiKeySet": "設定済み（変更する場合は新しいキーを入力）",
+    "orgInfo": "組織情報",
+    "orgName": "組織名",
+    "orgDescription": "説明"
   },
   "org": {
     "title": "組織",

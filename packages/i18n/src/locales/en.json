@@ -179,7 +179,19 @@
     "apiKeyName": "Key Name",
     "theme": "Theme",
     "darkMode": "Dark Mode",
-    "saved": "Settings saved"
+    "saved": "Settings saved",
+    "agentMode": "Agent Execution Mode",
+    "agentModeDesc": "Choose how AI agents are billed when executing tasks",
+    "agentModeSubscription": "Claude Subscription (claude -p CLI)",
+    "agentModeSubscriptionDesc": "No additional cost. Runs on your Claude subscription plan",
+    "agentModeApi": "Anthropic API Key (Pay-as-you-go)",
+    "agentModeApiDesc": "Calls the Anthropic API directly using your API key",
+    "anthropicApiKey": "Anthropic API Key",
+    "anthropicApiKeyPlaceholder": "sk-ant-...",
+    "anthropicApiKeySet": "Already set (enter a new key to change)",
+    "orgInfo": "Organization Info",
+    "orgName": "Organization Name",
+    "orgDescription": "Description"
   },
   "org": {
     "title": "Organization",

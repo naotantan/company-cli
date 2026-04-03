@@ -21,6 +21,10 @@ export const companies = pgTable('companies', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: varchar('name', { length: 255 }).notNull(),
   description: text('description'),
+  settings: json('settings').$type<{
+    defaultAgentType?: string;
+    anthropicApiKey?: string;
+  }>().default({}),
   created_at: timestamp('created_at').defaultNow(),
   updated_at: timestamp('updated_at').defaultNow(),
   created_by: uuid('created_by'),

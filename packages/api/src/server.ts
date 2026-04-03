@@ -16,6 +16,7 @@ import { routinesRouter } from './routes/routines';
 import { approvalsRouter } from './routes/approvals';
 import { activityRouter } from './routes/activity';
 import { pluginsRouter } from './routes/plugins';
+import { settingsRouter } from './routes/settings';
 import { errorHandler } from './middleware/error-handler';
 import { authMiddleware } from './middleware/auth';
 import { activityLogger } from './middleware/activity-logger';
@@ -112,6 +113,7 @@ export function createApp(): Express {
   app.use('/api/approvals', approvalsRouter);
   app.use('/api/activity', activityRouter);
   app.use('/api/plugins', pluginsRouter);
+  app.use('/api/settings', settingsRouter);
 
   // 404ハンドラ（未定義ルートへのリクエストをJSON形式で返す）
   app.use((_req, res) => {

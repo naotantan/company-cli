@@ -34,8 +34,12 @@ export interface CliConfig {
 export type Role = 'admin' | 'member' | 'viewer';
 
 // エージェントタイプ型
+// claude_local  : Claude サブスクリプションで動作（claude -p CLI、APIキー不要）
+// claude_api    : Anthropic API キーで動作（従量課金、サブスク不要）
+// その他        : 各ローカル/ゲートウェイ実装
 export type AgentType =
   | 'claude_local'
+  | 'claude_api'
   | 'codex_local'
   | 'cursor'
   | 'gemini_local'
