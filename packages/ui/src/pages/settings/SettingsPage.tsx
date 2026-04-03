@@ -18,6 +18,23 @@ export default function SettingsPage() {
   // 言語
   const [language, setLanguage] = useState(i18n.language || 'ja');
 
+  // バックアップ設定
+  const [backupEnabled, setBackupEnabled] = useState(false);
+  const [backupScheduleType, setBackupScheduleType] = useState('daily');
+  const [backupScheduleTime, setBackupScheduleTime] = useState('02:00');
+  const [backupRetentionDays, setBackupRetentionDays] = useState(30);
+  const [backupDestinationType, setBackupDestinationType] = useState('local');
+  const [backupLocalPath, setBackupLocalPath] = useState('');
+  const [backupS3Bucket, setBackupS3Bucket] = useState('');
+  const [backupS3Region, setBackupS3Region] = useState('');
+  const [backupGcsBucket, setBackupGcsBucket] = useState('');
+  const [backupCompression, setBackupCompression] = useState('gzip');
+  const [backupEncryption, setBackupEncryption] = useState(true);
+  const [backupIncludeActivityLog, setBackupIncludeActivityLog] = useState(false);
+  const [backupNotifyEmail, setBackupNotifyEmail] = useState('');
+  const [backupNotifyOnFailure, setBackupNotifyOnFailure] = useState(true);
+  const [backupNotifyOnSuccess, setBackupNotifyOnSuccess] = useState(false);
+
   // UI状態
   const [saving, setSaving] = useState('');  // セクション名
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -28,6 +45,26 @@ export default function SettingsPage() {
       const s = r.data.data;
       if (s.defaultAgentType) setDefaultAgentType(s.defaultAgentType);
       setHasApiKey(!!s.hasAnthropicApiKey);
+
+      // バックアップ設定を読み込む
+      if (s.backup) {
+        const b = s.backup as Record<string, unknown>;
+        if (typeof b.enabled === 'boolean') setBackupEnabled(b.enabled);
+        if (typeof b.scheduleType === 'string') setBackupScheduleType(b.scheduleType);
+        if (typeof b.scheduleTime === 'string') setBackupScheduleTime(b.scheduleTime);
+        if (typeof b.retentionDays === 'number') setBackupRetentionDays(b.retentionDays);
+        if (typeof b.destinationType === 'string') setBackupDestinationType(b.destinationType);
+        if (typeof b.localPath === 'string') setBackupLocalPath(b.localPath);
+        if (typeof b.s3Bucket === 'string') setBackupS3Bucket(b.s3Bucket);
+        if (typeof b.s3Region === 'string') setBackupS3Region(b.s3Region);
+        if (typeof b.gcsBucket === 'string') setBackupGcsBucket(b.gcsBucket);
+        if (typeof b.compression === 'string') setBackupCompression(b.compression);
+        if (typeof b.encryption === 'boolean') setBackupEncryption(b.encryption);
+        if (typeof b.includeActivityLog === 'boolean') setBackupIncludeActivityLog(b.includeActivityLog);
+        if (typeof b.notifyEmail === 'string') setBackupNotifyEmail(b.notifyEmail);
+        if (typeof b.notifyOnFailure === 'boolean') setBackupNotifyOnFailure(b.notifyOnFailure);
+        if (typeof b.notifyOnSuccess === 'boolean') setBackupNotifyOnSuccess(b.notifyOnSuccess);
+      }
     }).catch(() => {});
 
     // 組織情報を取得
@@ -77,6 +114,37 @@ export default function SettingsPage() {
     try {
       await i18n.changeLanguage(language);
       localStorage.setItem('language', language);
+      showMessage('success', t('settings.saved'));
+    } catch {
+      showMessage('error', t('errors.serverError'));
+    } finally {
+      setSaving('');
+    }
+  };
+
+  const handleSaveBackup = async () => {
+    setSaving('backup');
+    try {
+      const backupPayload: Record<string, unknown> = { enabled: backupEnabled };
+      if (backupEnabled) {
+        backupPayload.scheduleType = backupScheduleType;
+        backupPayload.scheduleTime = backupScheduleTime;
+        backupPayload.retentionDays = backupRetentionDays;
+        backupPayload.destinationType = backupDestinationType;
+        backupPayload.compression = backupCompression;
+        backupPayload.encryption = backupEncryption;
+        backupPayload.includeActivityLog = backupIncludeActivityLog;
+        if (backupNotifyEmail) backupPayload.notifyEmail = backupNotifyEmail;
+        backupPayload.notifyOnFailure = backupNotifyOnFailure;
+        backupPayload.notifyOnSuccess = backupNotifyOnSuccess;
+        if (backupDestinationType === 'local') backupPayload.localPath = backupLocalPath;
+        if (backupDestinationType === 's3') {
+          backupPayload.s3Bucket = backupS3Bucket;
+          backupPayload.s3Region = backupS3Region;
+        }
+        if (backupDestinationType === 'gcs') backupPayload.gcsBucket = backupGcsBucket;
+      }
+      await api.patch('/settings', { backup: backupPayload });
       showMessage('success', t('settings.saved'));
     } catch {
       showMessage('error', t('errors.serverError'));
@@ -223,6 +291,223 @@ export default function SettingsPage() {
           className="bg-sky-600 hover:bg-sky-700 disabled:opacity-50 px-4 py-2 rounded font-medium transition-colors"
         >
           {saving === 'language' ? '保存中...' : t('common.save')}
+        </button>
+      </div>
+
+      {/* バックアップ設定 */}
+      <div className="bg-slate-800 rounded-lg p-6 border border-slate-700 space-y-4">
+        <div>
+          <h2 className="text-lg font-bold">バックアップ設定</h2>
+          <p className="text-sm text-slate-400 mt-1">データベースの自動バックアップスケジュールと保存先を設定します</p>
+        </div>
+
+        {/* バックアップ有効化 */}
+        <label className="flex items-center gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={backupEnabled}
+            onChange={(e) => setBackupEnabled(e.target.checked)}
+            className="w-4 h-4 accent-sky-500"
+          />
+          <span className="font-medium">バックアップを有効にする</span>
+        </label>
+
+        {backupEnabled && (
+          <div className="space-y-4 border-t border-slate-700 pt-4">
+            {/* スケジュール */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">スケジュール</label>
+                <select
+                  value={backupScheduleType}
+                  onChange={(e) => setBackupScheduleType(e.target.value)}
+                  className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white"
+                >
+                  <option value="daily">毎日</option>
+                  <option value="weekly">毎週</option>
+                  <option value="monthly">毎月</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">実行時刻</label>
+                <input
+                  type="time"
+                  value={backupScheduleTime}
+                  onChange={(e) => setBackupScheduleTime(e.target.value)}
+                  className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white"
+                />
+              </div>
+            </div>
+
+            {/* 保持期間 */}
+            <div>
+              <label className="block text-sm font-medium mb-1">保持期間</label>
+              <select
+                value={backupRetentionDays}
+                onChange={(e) => setBackupRetentionDays(Number(e.target.value))}
+                className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white"
+              >
+                <option value={7}>7日間</option>
+                <option value={14}>14日間</option>
+                <option value={30}>30日間</option>
+                <option value={60}>60日間</option>
+                <option value={90}>90日間</option>
+                <option value={180}>180日間</option>
+                <option value={365}>365日間（1年）</option>
+              </select>
+            </div>
+
+            {/* バックアップ先 */}
+            <div>
+              <label className="block text-sm font-medium mb-1">バックアップ先</label>
+              <select
+                value={backupDestinationType}
+                onChange={(e) => setBackupDestinationType(e.target.value)}
+                className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white"
+              >
+                <option value="local">ローカルパス</option>
+                <option value="s3">Amazon S3</option>
+                <option value="gcs">Google Cloud Storage</option>
+              </select>
+            </div>
+
+            {/* ローカルパス */}
+            {backupDestinationType === 'local' && (
+              <div>
+                <label className="block text-sm font-medium mb-1">ローカルパス</label>
+                <input
+                  type="text"
+                  value={backupLocalPath}
+                  onChange={(e) => setBackupLocalPath(e.target.value)}
+                  placeholder="/backup"
+                  className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white"
+                />
+              </div>
+            )}
+
+            {/* S3設定 */}
+            {backupDestinationType === 's3' && (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium mb-1">S3 バケット名</label>
+                  <input
+                    type="text"
+                    value={backupS3Bucket}
+                    onChange={(e) => setBackupS3Bucket(e.target.value)}
+                    placeholder="my-backup-bucket"
+                    className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">S3 リージョン</label>
+                  <input
+                    type="text"
+                    value={backupS3Region}
+                    onChange={(e) => setBackupS3Region(e.target.value)}
+                    placeholder="ap-northeast-1"
+                    className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* GCS設定 */}
+            {backupDestinationType === 'gcs' && (
+              <div>
+                <label className="block text-sm font-medium mb-1">GCS バケット名</label>
+                <input
+                  type="text"
+                  value={backupGcsBucket}
+                  onChange={(e) => setBackupGcsBucket(e.target.value)}
+                  placeholder="my-gcs-bucket"
+                  className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white"
+                />
+              </div>
+            )}
+
+            {/* オプション */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">圧縮</label>
+                <select
+                  value={backupCompression}
+                  onChange={(e) => setBackupCompression(e.target.value)}
+                  className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white"
+                >
+                  <option value="gzip">gzip（推奨）</option>
+                  <option value="none">なし</option>
+                </select>
+              </div>
+              <div className="flex items-end pb-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={backupEncryption}
+                    onChange={(e) => setBackupEncryption(e.target.checked)}
+                    className="w-4 h-4 accent-sky-500"
+                  />
+                  <span className="text-sm font-medium">暗号化（AES-256）</span>
+                </label>
+              </div>
+            </div>
+
+            {/* 対象データ */}
+            <div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={backupIncludeActivityLog}
+                  onChange={(e) => setBackupIncludeActivityLog(e.target.checked)}
+                  className="w-4 h-4 accent-sky-500"
+                />
+                <span className="text-sm font-medium">アクティビティログを含める</span>
+                <span className="text-xs text-slate-400">（大容量になる場合があります）</span>
+              </label>
+            </div>
+
+            {/* 通知設定 */}
+            <div className="space-y-3 border-t border-slate-700 pt-4">
+              <h3 className="text-sm font-semibold text-slate-300">通知設定</h3>
+              <div>
+                <label className="block text-sm font-medium mb-1">通知先メールアドレス</label>
+                <input
+                  type="email"
+                  value={backupNotifyEmail}
+                  onChange={(e) => setBackupNotifyEmail(e.target.value)}
+                  placeholder="admin@example.com"
+                  className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white"
+                />
+              </div>
+              <div className="flex gap-6">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={backupNotifyOnFailure}
+                    onChange={(e) => setBackupNotifyOnFailure(e.target.checked)}
+                    className="w-4 h-4 accent-sky-500"
+                  />
+                  <span className="text-sm">失敗時に通知</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={backupNotifyOnSuccess}
+                    onChange={(e) => setBackupNotifyOnSuccess(e.target.checked)}
+                    className="w-4 h-4 accent-sky-500"
+                  />
+                  <span className="text-sm">成功時に通知</span>
+                </label>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={handleSaveBackup}
+          disabled={saving === 'backup'}
+          className="bg-sky-600 hover:bg-sky-700 disabled:opacity-50 px-4 py-2 rounded font-medium transition-colors"
+        >
+          {saving === 'backup' ? '保存中...' : '保存'}
         </button>
       </div>
     </div>
