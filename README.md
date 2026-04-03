@@ -314,7 +314,7 @@ curl -X POST http://localhost:3000/api/auth/register \
 |------|------|------------|
 | `claude_local` | Claudeサブスクリプションで動作（**デフォルト推奨**） | Claude Pro/Teamプラン |
 | `claude_api` | Anthropic APIキーで動作 | `config.apiKey`（必須） |
-| `gemini_local` | Google Gemini（APIキー方式） | `config.apiKey`（必須）・従量課金 |
+| `gemini_local` | Google Gemini（**APIキー必須・有料**） | Google Gemini APIキーが必須。従量課金のため、APIキー保有者のみ利用可能 |
 | `codex_local` | OpenAI Codex CLI（サブスク方式） | ChatGPT Pro/Plus プラン・`npm install -g @openai/codex` |
 
 ---
@@ -703,7 +703,7 @@ All authenticated requests require: `Authorization: Bearer <api_key>`
 |------|-------------|----------|
 | `claude_local` | Runs on Claude subscription via CLI (**recommended default**) | Claude Pro/Team plan |
 | `claude_api` | Calls Anthropic API directly | `config.apiKey` (required) |
-| `gemini_local` | Google Gemini (API key) | `config.apiKey` required — pay-as-you-go |
+| `gemini_local` | Google Gemini (**API key required — paid**) | Google Gemini API key required. Pay-as-you-go billing. Only available to users with an API key. |
 | `codex_local` | OpenAI Codex CLI (subscription) | ChatGPT Pro/Plus plan — `npm install -g @openai/codex` |
 
 ---

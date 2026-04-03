@@ -34,7 +34,7 @@ const agentTypeLabels: Record<AgentType, string> = {
   claude_api: 'Claude API',
   codex_local: 'Codex Local',
   cursor: 'Cursor',
-  gemini_local: 'Gemini Local',
+  gemini_local: 'Gemini (APIキー必須・有料)',
   openclaw_gateway: 'OpenClaw Gateway',
   opencode_local: 'OpenCode Local',
   pi_local: 'PI Local',

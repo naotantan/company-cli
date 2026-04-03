@@ -160,6 +160,7 @@
     "descriptionPlaceholder": "Briefly describe ownership and integrations",
     "anthropicApiKey": "Anthropic API Key",
     "apiKeyRequired": "`config.apiKey` is required for the `claude_api` type.",
+    "geminiApiKeyNote": "Gemini requires a Google Gemini API key and is billed on a pay-as-you-go basis. Only register if you have an API key.",
     "detailLoading": "Loading agent details...",
     "notFound": "Agent not found",
     "basicInfo": "Basic Info",

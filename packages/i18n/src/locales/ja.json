@@ -160,6 +160,7 @@
     "descriptionPlaceholder": "担当業務や接続先を簡潔に記述",
     "anthropicApiKey": "Anthropic API キー",
     "apiKeyRequired": "`claude_api` タイプでは `config.apiKey` が必須です。",
+    "geminiApiKeyNote": "Gemini は Google Gemini API キーが必須です。従量課金（有料）のため、APIキーをお持ちの方のみ登録できます。",
     "detailLoading": "エージェント詳細を読み込み中...",
     "notFound": "エージェントが見つかりません",
     "basicInfo": "基本情報",
