@@ -1,16 +1,12 @@
 import {
   pgTable,
-  serial,
   text,
   varchar,
-  integer,
   timestamp,
   uuid,
   json,
   boolean,
-  decimal,
   index,
-  foreignKey,
   unique,
 } from 'drizzle-orm/pg-core';
 

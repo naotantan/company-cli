@@ -2,6 +2,7 @@ import { Router, type Router as RouterType } from 'express';
 import { getDb, companies } from '@company/db';
 import { eq } from 'drizzle-orm';
 import type { AgentType } from '@company/shared';
+import { isValidEmail } from '../middleware/validate';
 
 export const settingsRouter: RouterType = Router();
 
@@ -64,8 +65,7 @@ function validateBackupConfig(backup: BackupConfig): string | null {
     return `compression が無効です。有効な値: ${VALID_COMPRESSION_TYPES.join(', ')}`;
   }
   if (backup.notifyEmail !== undefined && backup.notifyEmail !== '') {
-    // 簡易メールバリデーション
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(backup.notifyEmail)) {
+    if (!isValidEmail(backup.notifyEmail)) {
       return 'notifyEmail のメールアドレス形式が無効です';
     }
   }

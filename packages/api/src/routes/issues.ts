@@ -1,7 +1,9 @@
 import { Router, type Router as RouterType } from 'express';
 import { getDb, issues, issue_comments, issue_goals, agents, goals } from '@company/db';
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, sql, desc } from 'drizzle-orm';
 import { sanitizeString, sanitizePagination } from '../middleware/validate';
+
+const VALID_ISSUE_STATUSES = ['backlog', 'todo', 'in_progress', 'in_review', 'done', 'cancelled'] as const;
 
 export const issuesRouter: RouterType = Router();
 
@@ -67,17 +69,21 @@ issuesRouter.post('/', async (req, res, next) => {
       });
       return;
     }
+
+    // status/priority の検証
+    if (status && !VALID_ISSUE_STATUSES.includes(status as typeof VALID_ISSUE_STATUSES[number])) {
+      res.status(400).json({ error: 'validation_failed', message: `status が無効です。有効な値: ${VALID_ISSUE_STATUSES.join(', ')}` });
+      return;
+    }
+    if (priority !== undefined && (!Number.isInteger(priority) || priority < 0 || priority > 5)) {
+      res.status(400).json({ error: 'validation_failed', message: 'priority は 0〜5 の整数です' });
+      return;
+    }
+
     // XSS対策: HTMLタグを除去
     const sanitizedTitle = sanitizeString(title);
     const sanitizedDescription = description ? sanitizeString(description) : description;
     const db = getDb();
-    // identifier 採番
-    const countResult = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(issues)
-      .where(eq(issues.company_id, req.companyId!));
-    const count = Number(countResult[0]?.count ?? 0);
-    const identifier = `COMP-${String(count + 1).padStart(3, '0')}`;
     // assigned_toが未指定の場合、有効なエージェントに自動アサイン
     let finalAssignedTo = assigned_to;
     if (finalAssignedTo && !(await findOwnedAgent(db, req.companyId!, finalAssignedTo))) {
@@ -98,19 +104,38 @@ issuesRouter.post('/', async (req, res, next) => {
       }
     }
 
-    const newIssue = await db
-      .insert(issues)
-      .values({
-        company_id: req.companyId!,
-        identifier,
-        title: sanitizedTitle,
-        description: sanitizedDescription,
-        status,
-        priority,
-        assigned_to: finalAssignedTo,
-        created_by: req.userId,
-      })
-      .returning();
+    // トランザクション内で identifier を採番（race condition 防止）
+    const newIssue = await db.transaction(async (tx) => {
+      // 現在の最大 identifier を取得
+      const maxResult = await tx
+        .select({ max_id: sql<string | null>`max(identifier)` })
+        .from(issues)
+        .where(eq(issues.company_id, req.companyId!));
+
+      const maxIdentifier = maxResult[0]?.max_id;
+      let nextNum = 1;
+      if (maxIdentifier) {
+        // "COMP-001" → 1 を取り出してインクリメント
+        const match = maxIdentifier.match(/(\d+)$/);
+        if (match) nextNum = parseInt(match[1], 10) + 1;
+      }
+      const identifier = `COMP-${String(nextNum).padStart(3, '0')}`;
+
+      // トランザクション内で insert を実行
+      return tx
+        .insert(issues)
+        .values({
+          company_id: req.companyId!,
+          identifier,
+          title: sanitizedTitle,
+          description: sanitizedDescription,
+          status,
+          priority,
+          assigned_to: finalAssignedTo,
+          created_by: req.userId,
+        })
+        .returning();
+    });
     res.status(201).json({ data: newIssue[0] });
   } catch (err) {
     next(err);
@@ -151,6 +176,17 @@ issuesRouter.patch('/:issueId', async (req, res, next) => {
       priority?: number;
       assigned_to?: string;
     };
+
+    // status/priority の検証
+    if (status && !VALID_ISSUE_STATUSES.includes(status as typeof VALID_ISSUE_STATUSES[number])) {
+      res.status(400).json({ error: 'validation_failed', message: `status が無効です。有効な値: ${VALID_ISSUE_STATUSES.join(', ')}` });
+      return;
+    }
+    if (priority !== undefined && (!Number.isInteger(priority) || priority < 0 || priority > 5)) {
+      res.status(400).json({ error: 'validation_failed', message: 'priority は 0〜5 の整数です' });
+      return;
+    }
+
     const db = getDb();
     if (assigned_to !== undefined && assigned_to !== null && assigned_to !== '' && !(await findOwnedAgent(db, req.companyId!, assigned_to))) {
       res.status(400).json({

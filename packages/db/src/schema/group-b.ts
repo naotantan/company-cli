@@ -1,5 +1,5 @@
 import {
-  pgTable, text, varchar, integer, timestamp, uuid, json, boolean, index, foreignKey
+  pgTable, text, varchar, integer, timestamp, uuid, json, boolean, index
 } from 'drizzle-orm/pg-core';
 import { companies } from './group-a';
 

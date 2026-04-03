@@ -1,7 +1,7 @@
 import { Router, type Router as RouterType } from 'express';
 import { getDb, companies, company_memberships, join_requests } from '@company/db';
 import { eq, and } from 'drizzle-orm';
-import { sanitizePagination } from '../middleware/validate';
+import { sanitizePagination, sanitizeString } from '../middleware/validate';
 
 export const orgRouter: RouterType = Router();
 
@@ -28,8 +28,8 @@ orgRouter.patch('/', async (req, res, next) => {
     const updated = await db
       .update(companies)
       .set({
-        ...(name && { name }),
-        ...(description !== undefined && { description }),
+        ...(name && { name: sanitizeString(name) }),
+        ...(description !== undefined && { description: description ? sanitizeString(description) : description }),
         updated_at: new Date(),
       })
       .where(eq(companies.id, req.companyId!))
@@ -90,9 +90,19 @@ orgRouter.get('/join-requests', async (req, res, next) => {
 });
 
 // POST /api/org/join-requests/:id/approve
+const VALID_MEMBER_ROLES = ['member', 'viewer'] as const;
+
 orgRouter.post('/join-requests/:id/approve', async (req, res, next) => {
   try {
     const { role = 'member' } = req.body as { role?: string };
+    // admin 昇格を防ぐため許可ロールを制限する
+    if (!VALID_MEMBER_ROLES.includes(role as typeof VALID_MEMBER_ROLES[number])) {
+      res.status(400).json({
+        error: 'validation_failed',
+        message: `role は ${VALID_MEMBER_ROLES.join(', ')} のいずれかである必要があります`,
+      });
+      return;
+    }
     const db = getDb();
     const rows = await db
       .select()

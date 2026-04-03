@@ -1,8 +1,7 @@
 import {
-  pgTable, text, varchar, integer, timestamp, uuid, index, primaryKey, uniqueIndex
+  pgTable, text, varchar, integer, timestamp, uuid, index, primaryKey
 } from 'drizzle-orm/pg-core';
 import { companies } from './group-a';
-import { agents } from './group-b';
 
 // C1: issues
 export const issues = pgTable('issues', {
@@ -52,7 +51,9 @@ export const issue_label_assignments = pgTable('issue_label_assignments', {
   issue_id: uuid('issue_id').notNull().references(() => issues.id, { onDelete: 'cascade' }),
   label_id: uuid('label_id').notNull().references(() => issue_labels.id, { onDelete: 'cascade' }),
   created_at: timestamp('created_at').defaultNow(),
-});
+}, (table) => ({
+  pk: primaryKey({ columns: [table.issue_id, table.label_id] }),
+}));
 
 // C5: issue_attachments
 export const issue_attachments = pgTable('issue_attachments', {
@@ -117,7 +118,9 @@ export const issue_read_states = pgTable('issue_read_states', {
   user_id: uuid('user_id').notNull(),
   issue_id: uuid('issue_id').notNull().references(() => issues.id, { onDelete: 'cascade' }),
   read_at: timestamp('read_at').defaultNow(),
-});
+}, (table) => ({
+  pk: primaryKey({ columns: [table.user_id, table.issue_id] }),
+}));
 
 // C10: inbox_archives
 export const inbox_archives = pgTable('inbox_archives', {

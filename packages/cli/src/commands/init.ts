@@ -37,7 +37,7 @@ export const initCommand = new Command('init')
     }
   });
 
-async function initDocker(quiet: boolean): Promise<void> {
+async function initDocker(_quiet: boolean): Promise<void> {
   const spinner = ora('Docker 環境を確認しています...').start();
 
   try {

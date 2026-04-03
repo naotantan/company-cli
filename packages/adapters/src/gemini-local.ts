@@ -1,4 +1,4 @@
-import { BaseAdapter, type AdapterConfig, type TaskRequest, type TaskResponse, type HeartbeatResponse } from './base.js';
+import { BaseAdapter, type TaskRequest, type TaskResponse, type HeartbeatResponse } from './base.js';
 import fetch from 'node-fetch';
 
 export class GeminiLocalAdapter extends BaseAdapter {
@@ -11,9 +11,13 @@ export class GeminiLocalAdapter extends BaseAdapter {
   async heartbeat(): Promise<HeartbeatResponse> {
     if (!this.config.apiKey) return { alive: false };
     try {
+      // APIキーをクエリパラメータではなくヘッダーで送信（ログへの漏洩防止）
       const res = await fetch(
-        `${this.apiUrl}/models?key=${this.config.apiKey}`,
-        { signal: AbortSignal.timeout(5000) }
+        `${this.apiUrl}/models`,
+        {
+          headers: { 'x-goog-api-key': this.config.apiKey },
+          signal: AbortSignal.timeout(5000),
+        }
       );
       return { alive: res.ok };
     } catch {
@@ -32,11 +36,15 @@ export class GeminiLocalAdapter extends BaseAdapter {
       : request.prompt;
 
     try {
+      // APIキーをクエリパラメータではなくヘッダーで送信（ログへの漏洩防止）
       const res = await fetch(
-        `${this.apiUrl}/models/${model}:generateContent?key=${this.config.apiKey}`,
+        `${this.apiUrl}/models/${model}:generateContent`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': this.config.apiKey,
+          },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
           }),

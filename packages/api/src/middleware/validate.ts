@@ -1,5 +1,3 @@
-import type { Request, Response, NextFunction } from 'express';
-
 /**
  * 文字列のサニタイズ（XSS対策）
  * HTMLエンティティエンコーディングで危険な文字を無力化する（削除ではなくエスケープ）

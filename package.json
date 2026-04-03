@@ -6,16 +6,22 @@
     "dev": "pnpm --filter @company/api dev & pnpm --filter @company/ui dev",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
-    "lint": "pnpm -r lint",
+    "lint": "eslint .",
     "typecheck": "pnpm -r typecheck",
     "db:generate": "pnpm --filter @company/db generate",
     "db:migrate": "pnpm --filter @company/db migrate",
     "docker:up": "docker compose up -d",
-    "docker:down": "docker compose down"
+    "docker:down": "docker compose down",
+    "format": "prettier --write \"packages/*/src/**/*.ts\""
   },
   "devDependencies": {
     "@types/inquirer": "^9.0.9",
     "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.58.0",
+    "@typescript-eslint/parser": "^8.58.0",
+    "eslint": "^10.1.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.8.1",
     "typescript": "^5.4.0"
   },
   "engines": {
@@ -26,5 +32,22 @@
     "overrides": {
       "esbuild": ">=0.25.0"
     }
-  }
+  },
+  "author": "Naoto Kudo <naoto@kudos.dev>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/naotantan/company-cli"
+  },
+  "bugs": {
+    "url": "https://github.com/naotantan/company-cli/issues"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "multi-tenant",
+    "budget-monitor",
+    "claude",
+    "gemini"
+  ]
 }

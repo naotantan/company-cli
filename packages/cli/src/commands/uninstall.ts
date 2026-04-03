@@ -2,11 +2,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
 import inquirer from 'inquirer';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import { clearConfig } from '../config.js';
-
-const execAsync = promisify(exec);
 
 export const uninstallCommand = new Command('uninstall')
   .description('CLI をアンインストール')
