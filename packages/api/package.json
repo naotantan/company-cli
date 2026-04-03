@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@company/adapters": "workspace:*",
     "@company/db": "workspace:*",
     "@company/shared": "workspace:*",
     "bcryptjs": "^2.4.3",

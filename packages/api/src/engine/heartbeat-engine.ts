@@ -1,13 +1,22 @@
 /**
  * Heartbeatエンジン
  * - 有効なエージェントを定期的に起動し、ハートビート実行を記録する
- * - child_processを使いエージェントアダプターを呼び出す
+ * - @company/adapters の createAdapter でエージェントタイプに応じたアダプターを生成
  * - クラッシュ時はcrash-recoveryモジュールと連携して自動回復する
  */
 
-import { spawn } from 'child_process';
 import { getDb, agents, heartbeat_runs, heartbeat_run_events, agent_runtime_state } from '@company/db';
 import { eq, and } from 'drizzle-orm';
+import type { AgentType } from '@company/shared';
+
+// @company/adapters は ESM のため CJS コンテキストから static import できない
+// dynamic import で使用する。型のみここで定義してパッケージ依存を回避する
+type AdapterConfig = {
+  apiKey?: string;
+  baseUrl?: string;
+  model?: string;
+  timeout?: number;
+};
 
 // ハートビート間隔（デフォルト30秒）
 const HEARTBEAT_INTERVAL_MS = parseInt(process.env.HEARTBEAT_INTERVAL_MS || '30000', 10);
@@ -18,7 +27,12 @@ let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 /**
  * 1エージェントのハートビートを実行する
  */
-async function runAgentHeartbeat(agentId: string, companyId: string): Promise<void> {
+async function runAgentHeartbeat(
+  agentId: string,
+  companyId: string,
+  agentType: AgentType,
+  agentConfig: AdapterConfig,
+): Promise<void> {
   const db = getDb();
 
   // 実行ログをDBに記録（開始）
@@ -42,19 +56,27 @@ async function runAgentHeartbeat(agentId: string, companyId: string): Promise<vo
       },
     });
 
+    // アダプターを生成してハートビートを確認
+    // @company/adapters は ESM のため dynamic import で読み込む
+    const { createAdapter } = await import('@company/adapters');
+    const adapter = createAdapter(agentType, agentConfig);
+    const heartbeatResult = await adapter.heartbeat();
+
+    // ハートビートが alive でなければエラー扱い
+    if (!heartbeatResult.alive) {
+      throw new Error(`エージェント (${agentType}) が応答しません`);
+    }
+
     // last_heartbeat_at を更新
     await db.update(agents)
       .set({ last_heartbeat_at: new Date() })
       .where(and(eq(agents.id, agentId), eq(agents.company_id, companyId)));
 
-    // エージェント起動（child_process でアダプターを呼び出す）
-    await executeAgentProcess(agentId, runId);
-
     // 実行完了を記録
     await db.update(heartbeat_runs).set({
       status: 'completed',
       ended_at: new Date(),
-      result_summary: { success: true },
+      result_summary: { success: true, alive: true, version: heartbeatResult.version },
     }).where(eq(heartbeat_runs.id, runId));
 
     // ランタイム状態を完了に更新
@@ -90,55 +112,17 @@ async function runAgentHeartbeat(agentId: string, companyId: string): Promise<vo
 }
 
 /**
- * child_processでエージェントプロセスを起動する
- * 実際のアダプター呼び出しをシミュレートする（将来的にadaptersパッケージと統合）
- */
-async function executeAgentProcess(agentId: string, runId: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    // アダプター実行スクリプトを起動
-    // agentId/runId を引数に埋め込まず環境変数で渡す（コマンドインジェクション対策）
-    const proc = spawn('node', [
-      '-e',
-      'console.log(JSON.stringify({ agent_id: process.env.AGENT_ID, run_id: process.env.RUN_ID, status: "ok" }))',
-    ], {
-      timeout: 60000, // 60秒タイムアウト
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: {
-        ...process.env,
-        AGENT_ID: agentId,
-        RUN_ID: runId,
-      },
-    });
-
-    const stdout: string[] = [];
-    const stderr: string[] = [];
-
-    proc.stdout?.on('data', (data: Buffer) => stdout.push(data.toString()));
-    proc.stderr?.on('data', (data: Buffer) => stderr.push(data.toString()));
-
-    proc.on('close', (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`エージェントプロセスが終了コード ${code} で終了: ${stderr.join('')}`));
-      }
-    });
-
-    proc.on('error', (err) => {
-      reject(new Error(`プロセス起動失敗: ${err.message}`));
-    });
-  });
-}
-
-/**
  * 全有効エージェントのハートビートを実行する
  */
 async function runAllHeartbeats(): Promise<void> {
   try {
     const db = getDb();
+    // type と config も取得してアダプター生成に使用する
     const activeAgents = await db.select({
       id: agents.id,
       company_id: agents.company_id,
+      type: agents.type,
+      config: agents.config,
     }).from(agents).where(eq(agents.enabled, true));
 
     if (activeAgents.length === 0) return;
@@ -148,7 +132,12 @@ async function runAllHeartbeats(): Promise<void> {
     for (let i = 0; i < activeAgents.length; i += MAX_PARALLEL) {
       const batch = activeAgents.slice(i, i + MAX_PARALLEL);
       await Promise.allSettled(
-        batch.map(a => runAgentHeartbeat(a.id, a.company_id))
+        batch.map(a => runAgentHeartbeat(
+          a.id,
+          a.company_id,
+          a.type as AgentType,
+          (a.config as AdapterConfig) ?? {},
+        ))
       );
     }
   } catch (err) {
