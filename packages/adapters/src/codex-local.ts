@@ -1,56 +1,71 @@
+// OpenAI Codex CLI アダプター
+// ChatGPT Pro/Plus サブスクリプションで動作（APIキー不要）
+// 前提: npm install -g @openai/codex でインストール済み
+// 認証: `codex` コマンド初回起動時に ChatGPT でログイン → 以降はサブスク認証で動作
 import { BaseAdapter, type TaskRequest, type TaskResponse, type HeartbeatResponse } from './base.js';
-import fetch from 'node-fetch';
+import { execSync, spawn } from 'child_process';
 
 export class CodexLocalAdapter extends BaseAdapter {
-  private get apiUrl() {
-    return this.config.baseUrl || 'http://localhost:11434'; // Ollama default
-  }
-
   get name() { return 'codex_local'; }
 
   async heartbeat(): Promise<HeartbeatResponse> {
     try {
-      const res = await fetch(`${this.apiUrl}/api/version`, { signal: AbortSignal.timeout(5000) });
-      if (res.ok) {
-        return { alive: true };
-      }
-      return { alive: false };
+      // codex CLI がインストールされているか確認
+      execSync('codex --version', { stdio: 'pipe' });
+      return { alive: true };
     } catch {
       return { alive: false };
     }
   }
 
   async runTask(request: TaskRequest): Promise<TaskResponse> {
-    const model = this.config.model || 'codellama';
+    // プロンプトを stdin で渡す（シェルインジェクション対策: シェル文字列展開を使わない）
     const prompt = request.context
       ? `Context:\n${request.context}\n\nTask:\n${request.prompt}`
       : request.prompt;
 
-    try {
-      const res = await fetch(`${this.apiUrl}/api/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, prompt, stream: false }),
-        signal: AbortSignal.timeout((this.config.timeout || 120) * 1000),
+    return new Promise((resolve) => {
+      // `codex exec -` は stdin からプロンプトを読み込む非対話モード
+      const proc = spawn('codex', ['exec', '-'], {
+        timeout: (this.config.timeout || 120) * 1000,
+        stdio: ['pipe', 'pipe', 'pipe'],
       });
 
-      if (!res.ok) {
-        throw new Error(`Ollama API error: ${res.status}`);
-      }
+      const stdout: string[] = [];
+      const stderr: string[] = [];
 
-      const data = await res.json() as { response: string; done: boolean };
-      return {
-        taskId: request.taskId,
-        output: data.response,
-        finishReason: 'complete',
-      };
-    } catch (err) {
-      return {
-        taskId: request.taskId,
-        output: '',
-        finishReason: 'error',
-        error: err instanceof Error ? err.message : String(err),
-      };
-    }
+      proc.stdout?.on('data', (d: Buffer) => stdout.push(d.toString()));
+      proc.stderr?.on('data', (d: Buffer) => stderr.push(d.toString()));
+
+      proc.on('close', (code) => {
+        if (code === 0) {
+          resolve({
+            taskId: request.taskId,
+            output: stdout.join('').trim(),
+            finishReason: 'complete',
+          });
+        } else {
+          resolve({
+            taskId: request.taskId,
+            output: '',
+            finishReason: 'error',
+            error: stderr.join('').trim() || `exit code ${code}`,
+          });
+        }
+      });
+
+      proc.on('error', (err) => {
+        resolve({
+          taskId: request.taskId,
+          output: '',
+          finishReason: 'error',
+          error: err.message,
+        });
+      });
+
+      // stdin にプロンプトを書き込んで閉じる
+      proc.stdin?.write(prompt, 'utf8');
+      proc.stdin?.end();
+    });
   }
 }
