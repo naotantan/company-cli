@@ -1,4 +1,4 @@
-import { BaseAdapter, type AdapterConfig, type TaskRequest, type TaskResponse, type HeartbeatResponse } from './base.js';
+import { BaseAdapter, type TaskRequest, type TaskResponse, type HeartbeatResponse } from './base.js';
 import fetch from 'node-fetch';
 
 export class OpenclawGatewayAdapter extends BaseAdapter {

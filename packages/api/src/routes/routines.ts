@@ -1,6 +1,6 @@
 import { Router, type Router as RouterType } from 'express';
 import { getDb, routines, routine_runs } from '@company/db';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { sanitizeString } from '../middleware/validate';
 
 /** cron 式の基本的な妥当性確認（5フィールドまたは6フィールド） */

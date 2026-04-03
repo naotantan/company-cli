@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { createAdapter } from '../index.js';
 import { ClaudeLocalAdapter } from '../claude-local.js';
 import { CodexLocalAdapter } from '../codex-local.js';

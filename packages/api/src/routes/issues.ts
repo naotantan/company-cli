@@ -1,6 +1,6 @@
 import { Router, type Router as RouterType } from 'express';
 import { getDb, issues, issue_comments, issue_goals, agents, goals } from '@company/db';
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, sql, desc } from 'drizzle-orm';
 import { sanitizeString, sanitizePagination } from '../middleware/validate';
 
 const VALID_ISSUE_STATUSES = ['backlog', 'todo', 'in_progress', 'in_review', 'done', 'cancelled'] as const;

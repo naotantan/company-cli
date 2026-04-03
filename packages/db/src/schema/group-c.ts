@@ -1,8 +1,7 @@
 import {
-  pgTable, text, varchar, integer, timestamp, uuid, index, primaryKey, uniqueIndex
+  pgTable, text, varchar, integer, timestamp, uuid, index, primaryKey
 } from 'drizzle-orm/pg-core';
 import { companies } from './group-a';
-import { agents } from './group-b';
 
 // C1: issues
 export const issues = pgTable('issues', {

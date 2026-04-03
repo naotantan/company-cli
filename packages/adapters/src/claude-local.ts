@@ -1,4 +1,4 @@
-import { BaseAdapter, type AdapterConfig, type TaskRequest, type TaskResponse, type HeartbeatResponse } from './base.js';
+import { BaseAdapter, type TaskRequest, type TaskResponse, type HeartbeatResponse } from './base.js';
 import { execSync, spawn } from 'child_process';
 
 export class ClaudeLocalAdapter extends BaseAdapter {

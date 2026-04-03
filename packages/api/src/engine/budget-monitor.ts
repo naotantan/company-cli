@@ -1,5 +1,5 @@
 import { getDb, budget_policies, cost_events, agents, budget_incidents } from '@company/db';
-import { eq, gte, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 const BUDGET_CHECK_INTERVAL_MS = parseInt(process.env.BUDGET_CHECK_INTERVAL_MS || '60000', 10); // 1分
 

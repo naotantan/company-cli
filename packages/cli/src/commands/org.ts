@@ -1,7 +1,6 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
-import inquirer from 'inquirer';
 import { getConfig } from '../config.js';
 import { apiRequest, checkAuth } from '../api.js';
 import type { Company } from '@company/shared';

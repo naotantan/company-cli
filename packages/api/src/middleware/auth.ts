@@ -85,7 +85,7 @@ export async function authMiddleware(
           break;
         }
       }
-    } catch (bcryptErr) {
+    } catch {
       logAuthFailure(req, 'bcrypt_error');
       res.status(401).json({
         error: 'invalid_api_key',

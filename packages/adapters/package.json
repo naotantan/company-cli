@@ -29,5 +29,12 @@
     "tsx": "^4.7.0",
     "typescript": "^5.4.0",
     "vitest": "^1.4.0"
+  },
+  "author": "Naoto Kudo <naoto@kudos.dev>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/naotokudo/company-cli",
+    "directory": "packages/adapters"
   }
 }

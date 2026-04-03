@@ -94,8 +94,6 @@ describe('S2: isValidEmail — RFC 5321 簡易準拠', () => {
 
   it('S2-8: 254文字ちょうどは許可する（境界値）', () => {
     // user@domain.com 形式で合計254文字
-    const localPart = 'a'.repeat(243);
-    const email = `${localPart}@example.com`; // 243 + 1 + 11 = 255 → 254文字に調整
     const trimmedLocal = 'a'.repeat(242);
     const validEmail = `${trimmedLocal}@example.com`; // 242+12=254
     expect(validEmail.length).toBe(254);

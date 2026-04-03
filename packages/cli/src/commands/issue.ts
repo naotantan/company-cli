@@ -4,7 +4,7 @@ import ora from 'ora';
 import inquirer from 'inquirer';
 import { getConfig } from '../config.js';
 import { apiRequest, checkAuth } from '../api.js';
-import { ISSUE_STATUSES, ISSUE_PRIORITIES } from '@company/shared';
+import { ISSUE_PRIORITIES } from '@company/shared';
 
 interface Issue {
   id: string;
