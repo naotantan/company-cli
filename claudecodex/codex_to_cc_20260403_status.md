@@ -176,3 +176,138 @@ README には `pnpm --filter @company/db migrate` とありますが、実際の
 - 以前の `tsx src/migrate.ts` + drizzle migrator 前提は、migration assets 不在の現リポジトリと整合していませんでした
 - dev 起動時の env 解決は「repo root を前提にしていたが、実行 cwd は package 単位」という齟齬が本質です
 - もし詳細設計書やセットアップ手順書があるなら、env 解決ポリシーと DB bootstrap 方式は記述更新候補です
+
+---
+
+## 追記: Web UI/UX 評価レポート（Claude 向け要約）
+
+Web UI/UX を企業販売前提でレビューし、Claude がそのまま実装判断に使える形式へ整理しました。詳細版はローカル作業ファイルとして以下にあります。
+
+- `/Users/naoto/Downloads/codex/company-cli_web_uiux_report_for_claude_20260403.md`
+
+ここでは、repo 連携用に要点だけ圧縮して共有します。
+
+### 総評
+
+現状の Web UI は `concept demo` 寄りで、`enterprise-credible product UI` にはまだ達していません。最大の問題はビジュアルではなく **runtime integrity** です。
+
+確認できた事実:
+
+- UI が存在しない API ルートを呼んでいる箇所が複数ある
+- UI が API のレスポンス形を誤認している箇所が複数ある
+- 一覧画面はあるが、作成・編集・運用完結の導線が未実装な箇所が多い
+- `pnpm --filter @company/ui dev` は評価時点で target transform エラーを出した
+- 一方で `pnpm build` は通る
+
+### 評価スコア（5軸 x 10点 = 50点満点）
+
+- 認証・初回導入体験: `31/50`
+- ナビゲーション・情報設計: `24/50`
+- ダッシュボード・経営可視化: `19/50`
+- Issue・Project 運用 UX: `17/50`
+- Agent・Approval・Routine UX: `23/50`
+- 組織管理・権限管理 UX: `14/50`
+- 設定・コスト・プラグイン UX: `21/50`
+- デザインシステム・レスポンシブ・アクセシビリティ: `26/50`
+
+販売 readiness としては `C-` 相当、位置づけは `beta 前半未満` と見ています。
+
+### Claude に特に見てほしい confirmed facts
+
+#### 1. Dashboard は UI が `/dashboard/stats` を呼ぶが API に存在しない
+
+- UI: `packages/ui/src/pages/DashboardPage.tsx`
+- さらに trend 表示が固定値
+
+これは見た目は良いが、経営向けダッシュボードとしては信頼性が出ません。
+
+#### 2. Issue Detail は API 契約を誤認している
+
+- UI は `/issues/:id` のレスポンスに `comments[]` を含む前提
+- 実 API はコメント別取得: `/issues/:issueId/comments`
+- UI はコメント投稿時に `{ text }` を送っている
+- API は `{ body }` を要求
+
+対象:
+
+- `packages/ui/src/pages/issues/IssueDetailPage.tsx`
+- `packages/api/src/routes/issues.ts`
+
+#### 3. Org 管理 UI は最も危険
+
+- UI は `/org` で組織情報 + メンバー一覧が返る前提
+- 実 API の `/org` は組織本体のみ
+- UI は `/org/invite` を叩くが API に存在しない
+- 実 API は `/org/members`, `/org/join-requests`, `/approve`, `/deny` を持つ
+
+つまり、企業販売で重要な admin UX が Web 上で成立していません。
+
+#### 4. Costs / Plugins も API 契約が崩れている
+
+- Costs UI は `/costs/summary` を呼ぶが API は `/costs` と `/costs/budget`
+- Plugins UI は `/plugins/install` を呼ぶが API は plugin CRUD/job/webhook 構造
+
+対象:
+
+- `packages/ui/src/pages/costs/CostsPage.tsx`
+- `packages/api/src/routes/costs.ts`
+- `packages/ui/src/pages/plugins/PluginsPage.tsx`
+- `packages/api/src/routes/plugins.ts`
+
+#### 5. Layout / IA は flat すぎる
+
+- 13 個のナビ項目が同列
+- role-based prioritization なし
+- emoji icon 使用
+- mobile collapse なし
+
+これは後回し可能だが、企業販売段階では印象と操作性の両面で効いてきます。
+
+### P0 / P1 / P2 提案
+
+#### P0
+
+- [ ] UI/API 契約の全面統一
+- [ ] 存在しない API ルート参照の解消
+- [ ] Issue / Agent / Project / Routine / Plugin の CRUD 導線実装
+- [ ] Org 管理 UX の実 API ベースへの再設計
+- [ ] `pnpm --filter @company/ui dev` の起動安定化
+
+#### P1
+
+- [ ] 経営向け dashboard 再設計
+- [ ] onboarding wizard / sample data / first-success UX
+- [ ] audit / approval 文脈 UI 強化
+- [ ] budget policy UI
+- [ ] role-aware navigation / home variation
+
+#### P2
+
+- [ ] design system standardization
+- [ ] responsive navigation
+- [ ] accessibility pass
+- [ ] power-user features
+- [ ] full-screen i18n completion
+
+### 推奨作業順
+
+Claude が実装判断するなら、順番は以下が最も合理的です。
+
+1. `runtime contract audit`
+2. `org admin repair`
+3. `issue/project workflow completion`
+4. `costs/plugins backend-aligned UI`
+5. `dashboard rebuild`
+6. `design system + responsive + accessibility pass`
+
+### 補足
+
+この評価は「見た目が悪い」という話ではありません。むしろ product story は見えています。問題は、
+
+- contract discipline
+- operational completeness
+- enterprise administration depth
+
+の 3 点です。
+
+P0 を潰せば `demo-quality UI` から `credible beta` に上げられると見ています。
