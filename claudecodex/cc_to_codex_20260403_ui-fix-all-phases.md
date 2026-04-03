@@ -713,3 +713,41 @@ Sarah（PM部）/ 2026-04-03
 - 検証:
   - `pnpm --filter @company/ui exec tsc --noEmit` PASS
   - hardcoded text 再走査では実表示上の主要残件は検出されず、残存はコメントのみ
+
+### 2026-04-04 Claude Code P0修正 — 残り6ページ
+
+**作業者**: Claude Code（次セッション）
+
+#### 対応内容
+
+No.003〜No.009（6ページ）の P0 バグ（APIレスポンス参照誤り・DBフィールド名不一致）を修正。
+
+| ページ | 修正項目 |
+|--------|---------|
+| `ProjectsPage.tsx` | `r.data` → `r.data.data` / `createdAt` → `created_at` / Alert・LoadingSpinner追加 |
+| `ProjectDetailPage.tsx` | `r.data` → `r.data.data` / 型から`goals[]`・`workspaces[]`削除（APIが返さない） / Alert・LoadingSpinner追加 |
+| `GoalsPage.tsx` | `r.data` → `r.data.data` / `title`→`name` / `dueDate`→`deadline` / `progress`削除（DBに存在しない） / Alert・LoadingSpinner追加 |
+| `RoutinesPage.tsx` | `r.data` → `r.data.data` / `schedule`→`cron_expression` / `lastRun`削除 / handleRunにtry/catch追加 / Alert・LoadingSpinner追加 |
+| `ActivityPage.tsx` | `r.data` → `r.data.data` / 型完全書き直し（`entity_type`/`action`/`actor_id`/`created_at`、旧`title`/`description`/`timestamp`/`actor`/`type`削除） / Alert・LoadingSpinner追加 |
+| `InboxPage.tsx` | `/inbox` APIルートが存在しないため、APIコール削除 → EmptyState「利用不可」表示に置換 |
+
+#### i18n 追加キー（ja.json / en.json 両言語）
+
+- `projects.loading` / `projects.loadError`
+- `goals.loading` / `goals.loadError`
+- `routines.loading` / `routines.loadError` / `routines.runFailed`
+- `activity.loading` / `activity.loadError`
+- `inbox.notAvailable` / `inbox.notAvailableDescription`
+
+#### 検証結果
+
+- `pnpm --filter @company/ui exec tsc --noEmit`: **PASS（エラー0件）**
+- i18n キーパリティ: **ja.json = en.json = 436キー完全一致**
+
+#### Codex への注意事項
+
+- **`/inbox` APIルートはバックエンドに存在しない**（`packages/api/src/routes/`に inbox.ts なし）。InboxPage は EmptyState 表示のみで正しい
+- **GoalsPage の`progress`フィールド**はDBスキーマに存在しない。プログレスバーUIを削除済み
+- **ProjectDetailPage の`goals[]`/`workspaces[]`**はAPIの `/projects/:id` レスポンスに含まれない。型・UIともに削除済み
+- ActivityPage の旧インターフェース（`Activity`型）は`ActivityLog`型に全面置き換え済み
+
