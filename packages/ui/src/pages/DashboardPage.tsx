@@ -1,5 +1,7 @@
 import { useQuery } from 'react-query';
 import { Link } from 'react-router-dom';
+import { Activity, ArrowRight, Bot, ClipboardList, ShieldCheck, Zap } from 'lucide-react';
+import { useTranslation } from '@company/i18n';
 import api from '../lib/api.ts';
 import {
   Card,
@@ -10,24 +12,60 @@ import {
   Alert,
 } from '../components/ui';
 
-interface DashboardStats {
-  agentCount: number;
-  openIssues: number;
-  pendingApprovals: number;
-  recentActivity: { id: string; title: string; timestamp: string }[];
+// GET /api/agents のレスポンス型
+interface Agent {
+  id: string;
+  company_id: string;
+  name: string;
+  type: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+  last_heartbeat_at?: string;
+}
+
+// GET /api/issues のレスポンス型
+interface Issue {
+  id: string;
+  identifier: string;
+  title: string;
+  status: string;
+  priority: number;
+  created_at: string;
+}
+
+// GET /api/approvals のレスポンス型
+interface Approval {
+  id: string;
+  issue_id: string;
+  approver_id: string;
+  status: string;
+  created_at: string;
+  decided_at?: string;
+}
+
+// GET /api/activity のレスポンス型
+interface ActivityLog {
+  id: string;
+  company_id: string;
+  actor_id: string;
+  entity_type: string;
+  entity_id: string;
+  action: string;
+  created_at: string;
 }
 
 function StatCard({
   label,
   value,
   icon,
-  trend,
+  detail,
   color,
 }: {
   label: string;
   value: number | string;
-  icon: string;
-  trend?: { value: number; positive: boolean };
+  icon: React.ReactNode;
+  detail: string;
   color: 'sky' | 'orange' | 'red' | 'emerald';
 }) {
   const colorMap = {
@@ -39,44 +77,120 @@ function StatCard({
 
   return (
     <Card hoverable>
-      <CardBody className="flex items-start justify-between">
-        <div>
-          <p className="text-slate-400 text-sm font-medium mb-2">{label}</p>
+      <CardBody className="flex items-start justify-between gap-4 p-4">
+        <div className="min-w-0">
+          <p className="mb-1 text-sm font-medium text-slate-400">{label}</p>
           <p className={`text-4xl font-bold bg-gradient-to-r ${colorMap[color]} bg-clip-text text-transparent`}>
             {value}
           </p>
-          {trend && (
-            <p className={`text-xs mt-2 ${trend.positive ? 'text-emerald-400' : 'text-red-400'}`}>
-              {trend.positive ? '↑' : '↓'} {Math.abs(trend.value)}% 前月比
-            </p>
-          )}
+          <p className="mt-2 text-xs text-slate-500">{detail}</p>
         </div>
-        <span className="text-3xl opacity-30">{icon}</span>
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-500">
+          {icon}
+        </span>
       </CardBody>
     </Card>
   );
 }
 
 export default function DashboardPage() {
-  const { data, isLoading, error } = useQuery<DashboardStats>('dashboard', () =>
-    api.get('/dashboard/stats').then((r) => r.data),
+  const { t } = useTranslation();
+
+  // D-1修正: 存在しないエンドポイントを廃止し、既存APIを個別に呼び出す
+  // D-3修正: r.data → r.data.data
+
+  // 稼働中エージェント数
+  const { data: agents, isLoading: agentsLoading, error: agentsError } = useQuery<Agent[]>(
+    'agents',
+    () => api.get('/agents').then((r) => r.data.data),
   );
+
+  // 未完了Issue数
+  const { data: issues, isLoading: issuesLoading, error: issuesError } = useQuery<Issue[]>(
+    'issues',
+    () => api.get('/issues').then((r) => r.data.data),
+  );
+
+  // 承認待ち一覧
+  const { data: approvals, isLoading: approvalsLoading, error: approvalsError } = useQuery<Approval[]>(
+    'approvals-pending',
+    () => api.get('/approvals', { params: { status: 'pending' } }).then((r) => r.data.data),
+  );
+
+  // 最近のアクティビティ（直近5件）
+  const { data: activities, isLoading: activitiesLoading, error: activitiesError } = useQuery<ActivityLog[]>(
+    'activity',
+    () => api.get('/activity', { params: { limit: 5 } }).then((r) => r.data.data),
+  );
+
+  // D-5修正: enabled === true のエージェント数をカウント
+  const agentCount = (agents ?? []).filter((a) => a.enabled).length;
+
+  // D-6修正: status !== 'done' の未完了Issue数をカウント
+  const openIssues = (issues ?? []).filter((i) => i.status !== 'done').length;
+
+  // 承認待ち件数
+  const pendingApprovals = (approvals ?? []).length;
+
+  const isLoading = agentsLoading || issuesLoading || approvalsLoading || activitiesLoading;
+  const hasError = agentsError || issuesError || approvalsError || activitiesError;
 
   if (isLoading)
     return (
-      <div className="p-6">
-        <LoadingSpinner text="ダッシュボードを読み込み中..." />
+      <div className="p-6 space-y-6 max-w-7xl mx-auto">
+        <div className="space-y-2">
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-sky-400 to-sky-600 bg-clip-text text-transparent">
+            {t('dashboard.title')}
+          </h1>
+          <p className="max-w-2xl text-slate-400">
+            {t('dashboard.subtitle')}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <Card key={index}>
+              <CardBody className="space-y-3 p-4">
+                <div className="h-4 w-24 rounded bg-slate-700/80" />
+                <div className="h-10 w-16 rounded bg-slate-800" />
+                <div className="h-3 w-32 rounded bg-slate-800" />
+              </CardBody>
+            </Card>
+          ))}
+        </div>
+
+        <Card>
+          <CardBody className="py-16">
+            <LoadingSpinner text={t('dashboard.loading')} />
+          </CardBody>
+        </Card>
       </div>
     );
 
-  if (error)
+  if (hasError)
     return (
-      <div className="p-6">
-        <Alert
-          variant="danger"
-          title="エラーが発生しました"
-          message="ダッシュボードの読み込みに失敗しました。ページを更新して再度お試しください。"
-        />
+      <div className="p-6 space-y-6 max-w-7xl mx-auto">
+        <div className="space-y-2">
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-sky-400 to-sky-600 bg-clip-text text-transparent">
+            {t('dashboard.title')}
+          </h1>
+          <p className="max-w-2xl text-slate-400">
+            {t('dashboard.subtitle')}
+          </p>
+        </div>
+
+        <Card>
+          <CardBody className="space-y-4 p-6">
+            <Alert
+              variant="danger"
+              title={t('dashboard.loadFailed')}
+              message={t('dashboard.loadFailedMessage')}
+            />
+            <p className="text-sm text-slate-500">
+              {t('dashboard.loadFailedScope')}
+            </p>
+          </CardBody>
+        </Card>
       </div>
     );
 
@@ -84,76 +198,79 @@ export default function DashboardPage() {
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       <div className="space-y-2">
         <h1 className="text-4xl font-bold bg-gradient-to-r from-sky-400 to-sky-600 bg-clip-text text-transparent">
-          ダッシュボード
+          {t('dashboard.title')}
         </h1>
-        <p className="text-slate-400">
-          組織全体の状況をリアルタイムで把握できます
+        <p className="max-w-2xl text-slate-400">
+          {t('dashboard.subtitle')}
         </p>
       </div>
 
       {/* 統計カード */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
-          label="稼働中のエージェント"
-          value={data?.agentCount || 0}
-          icon="🤖"
-          trend={{ value: 12, positive: true }}
+          label={t('dashboard.activeAgents')}
+          value={agentCount}
+          icon={<Bot className="h-5 w-5" />}
+          detail={t('dashboard.activeAgentsDetail')}
           color="sky"
         />
         <StatCard
-          label="オープン Issue"
-          value={data?.openIssues || 0}
-          icon="📋"
-          trend={{ value: 5, positive: false }}
+          label={t('dashboard.incompleteIssues')}
+          value={openIssues}
+          icon={<ClipboardList className="h-5 w-5" />}
+          detail={t('dashboard.incompleteIssuesDetail')}
           color="orange"
         />
         <StatCard
-          label="承認待ち"
-          value={data?.pendingApprovals || 0}
-          icon="✓"
-          trend={{ value: 3, positive: false }}
+          label={t('dashboard.pendingApprovals')}
+          value={pendingApprovals}
+          icon={<ShieldCheck className="h-5 w-5" />}
+          detail={t('dashboard.pendingApprovalsDetail')}
           color="red"
         />
         <StatCard
-          label="システムステータス"
-          value="正常"
-          icon="⚡"
+          label={t('dashboard.systemStatus')}
+          value={t('dashboard.systemStatusNormal')}
+          icon={<Zap className="h-5 w-5" />}
+          detail={t('dashboard.systemStatusDetail')}
           color="emerald"
         />
       </div>
 
-      {/* アラート */}
-      {(data?.pendingApprovals || 0) > 0 && (
+      {/* 承認待ちアラート */}
+      {pendingApprovals > 0 && (
         <Alert
           variant="warning"
-          title="承認待ちがあります"
-          message={`${data?.pendingApprovals} 件の承認リクエストがあります。`}
+          title={t('dashboard.pendingAlertTitle')}
+          message={t('dashboard.pendingAlertMessage', { count: pendingApprovals })}
         />
       )}
 
       {/* 最近のアクティビティ */}
       <Card>
         <CardHeader>
-          <h2 className="text-xl font-bold">最近のアクティビティ</h2>
+          <h2 className="text-xl font-bold">{t('dashboard.recentActivity')}</h2>
         </CardHeader>
         <CardBody>
-          {data?.recentActivity && data.recentActivity.length > 0 ? (
+          {(activities ?? []).length > 0 ? (
             <div className="space-y-3">
-              {data.recentActivity.slice(0, 5).map((activity) => (
+              {(activities ?? []).slice(0, 5).map((activity) => (
                 <div
                   key={activity.id}
-                  className="flex justify-between items-center p-3 rounded-lg hover:bg-slate-700/30 transition-colors"
+                  className="flex flex-col gap-2 rounded-lg p-3 transition-colors hover:bg-slate-700/30 md:flex-row md:items-center md:justify-between"
                 >
-                  <p className="text-slate-300 text-sm">{activity.title}</p>
-                  <span className="text-xs text-slate-500">{activity.timestamp}</span>
+                  <p className="text-slate-300 text-sm">
+                    {activity.entity_type}: {activity.action}
+                  </p>
+                  <span className="text-xs text-slate-500">{activity.created_at}</span>
                 </div>
               ))}
             </div>
           ) : (
             <EmptyState
-              icon="📊"
-              title="アクティビティはまだありません"
-              description="アクティビティが記録されると、ここに表示されます"
+              icon={<Activity className="h-10 w-10" />}
+              title={t('dashboard.noActivityTitle')}
+              description={t('dashboard.noActivityDescription')}
             />
           )}
         </CardBody>
@@ -162,26 +279,29 @@ export default function DashboardPage() {
       {/* クイックアクション */}
       <Card>
         <CardHeader>
-          <h2 className="text-xl font-bold">クイックアクション</h2>
+          <h2 className="text-xl font-bold">{t('dashboard.quickActions')}</h2>
         </CardHeader>
         <CardBody className="flex flex-wrap gap-3">
           <Link
             to="/agents"
-            className="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-sm font-medium transition-colors"
+            className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-700"
           >
-            エージェント管理へ
+            <span>{t('dashboard.manageAgents')}</span>
+            <ArrowRight className="h-4 w-4" />
           </Link>
           <Link
             to="/issues"
-            className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-100 text-sm font-medium transition-colors"
+            className="inline-flex items-center gap-2 rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-slate-100 transition-colors hover:bg-slate-600"
           >
-            Issue一覧へ
+            <span>{t('dashboard.viewIssues')}</span>
+            <ArrowRight className="h-4 w-4" />
           </Link>
           <Link
             to="/approvals"
-            className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-100 text-sm font-medium transition-colors"
+            className="inline-flex items-center gap-2 rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-slate-100 transition-colors hover:bg-slate-600"
           >
-            承認リストへ
+            <span>{t('dashboard.viewApprovals')}</span>
+            <ArrowRight className="h-4 w-4" />
           </Link>
         </CardBody>
       </Card>

@@ -1,4 +1,5 @@
 import { useQuery } from 'react-query';
+import { useTranslation } from '@company/i18n';
 import api from '../lib/api.ts';
 
 interface Activity {
@@ -11,17 +12,18 @@ interface Activity {
 }
 
 export default function ActivityPage() {
+  const { t } = useTranslation();
   const { data: activities, isLoading, error } = useQuery<Activity[]>(
     'activity',
     () => api.get('/activity').then((r) => r.data),
   );
 
-  if (isLoading) return <div className="p-6">読み込み中...</div>;
-  if (error) return <div className="p-6 text-red-400">エラーが発生しました</div>;
+  if (isLoading) return <div className="p-6">{t('common.loading')}</div>;
+  if (error) return <div className="p-6 text-red-400">{t('errors.serverError')}</div>;
 
   return (
     <div className="p-6 space-y-6">
-      <h1 className="text-3xl font-bold">アクティビティログ</h1>
+      <h1 className="text-3xl font-bold">{t('activity.logTitle')}</h1>
 
       <div className="space-y-3">
         {activities && activities.length > 0 ? (
@@ -35,7 +37,7 @@ export default function ActivityPage() {
                   <h3 className="font-bold">{activity.title}</h3>
                   <p className="text-slate-400 text-sm">{activity.description}</p>
                   <p className="text-xs text-slate-500 mt-2">
-                    実行者: {activity.actor}
+                    {t('activity.actorValue', { actor: activity.actor })}
                   </p>
                 </div>
                 <div className="text-right">
@@ -48,7 +50,7 @@ export default function ActivityPage() {
             </div>
           ))
         ) : (
-          <p className="text-slate-400">アクティビティはありません</p>
+          <p className="text-slate-400">{t('activity.noActivity')}</p>
         )}
       </div>
     </div>

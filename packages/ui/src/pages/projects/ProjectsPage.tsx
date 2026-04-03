@@ -1,5 +1,6 @@
 import { useQuery } from 'react-query';
 import { Link } from 'react-router-dom';
+import { useTranslation } from '@company/i18n';
 import api from '../../lib/api.ts';
 
 interface Project {
@@ -11,20 +12,21 @@ interface Project {
 }
 
 export default function ProjectsPage() {
+  const { t } = useTranslation();
   const { data: projects, isLoading, error } = useQuery<Project[]>(
     'projects',
     () => api.get('/projects').then((r) => r.data),
   );
 
-  if (isLoading) return <div className="p-6">読み込み中...</div>;
-  if (error) return <div className="p-6 text-red-400">エラーが発生しました</div>;
+  if (isLoading) return <div className="p-6">{t('common.loading')}</div>;
+  if (error) return <div className="p-6 text-red-400">{t('errors.serverError')}</div>;
 
   return (
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">プロジェクト</h1>
+        <h1 className="text-3xl font-bold">{t('projects.title')}</h1>
         <button className="bg-sky-600 hover:bg-sky-700 px-4 py-2 rounded font-medium">
-          新規作成
+          {t('projects.newProject')}
         </button>
       </div>
 
@@ -47,13 +49,13 @@ export default function ProjectsPage() {
                       : 'bg-slate-700 text-slate-300'
                   }`}
                 >
-                  {project.status === 'active' ? 'アクティブ' : 'アーカイブ'}
+                  {project.status === 'active' ? t('projects.active') : t('projects.archived')}
                 </span>
               </div>
             </Link>
           ))
         ) : (
-          <p className="text-slate-400">プロジェクトはありません</p>
+          <p className="text-slate-400">{t('projects.noProjects')}</p>
         )}
       </div>
     </div>

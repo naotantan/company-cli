@@ -1,5 +1,6 @@
 import { useParams } from 'react-router-dom';
 import { useQuery } from 'react-query';
+import { useTranslation } from '@company/i18n';
 import api from '../../lib/api.ts';
 
 interface ProjectDetail {
@@ -12,15 +13,16 @@ interface ProjectDetail {
 }
 
 export default function ProjectDetailPage() {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const { data, isLoading, error } = useQuery<ProjectDetail>(
     ['project', id],
     () => api.get(`/projects/${id}`).then((r) => r.data),
   );
 
-  if (isLoading) return <div className="p-6">読み込み中...</div>;
+  if (isLoading) return <div className="p-6">{t('common.loading')}</div>;
   if (error)
-    return <div className="p-6 text-red-400">プロジェクトが見つかりません</div>;
+    return <div className="p-6 text-red-400">{t('projects.notFound')}</div>;
 
   return (
     <div className="p-6 space-y-6 max-w-4xl">
@@ -29,7 +31,7 @@ export default function ProjectDetailPage() {
 
       <div className="grid grid-cols-2 gap-6">
         <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-          <h2 className="text-lg font-bold mb-3">関連ゴール</h2>
+          <h2 className="text-lg font-bold mb-3">{t('projects.relatedGoals')}</h2>
           <ul className="space-y-2">
             {data?.goals && data.goals.length > 0 ? (
               data.goals.map((goal) => (
@@ -38,13 +40,13 @@ export default function ProjectDetailPage() {
                 </li>
               ))
             ) : (
-              <p className="text-slate-400 text-sm">ゴールはありません</p>
+              <p className="text-slate-400 text-sm">{t('projects.noGoals')}</p>
             )}
           </ul>
         </div>
 
         <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-          <h2 className="text-lg font-bold mb-3">ワークスペース</h2>
+          <h2 className="text-lg font-bold mb-3">{t('projects.workspaces')}</h2>
           <ul className="space-y-2">
             {data?.workspaces && data.workspaces.length > 0 ? (
               data.workspaces.map((workspace) => (
@@ -53,7 +55,7 @@ export default function ProjectDetailPage() {
                 </li>
               ))
             ) : (
-              <p className="text-slate-400 text-sm">ワークスペースはありません</p>
+              <p className="text-slate-400 text-sm">{t('projects.noWorkspaces')}</p>
             )}
           </ul>
         </div>

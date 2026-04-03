@@ -1,5 +1,6 @@
 import { useQuery } from 'react-query';
 import { useState } from 'react';
+import { useTranslation } from '@company/i18n';
 import api from '../lib/api.ts';
 import { Card, CardBody, Badge, LoadingSpinner, EmptyState } from '../components/ui';
 
@@ -14,6 +15,7 @@ interface InboxItem {
 }
 
 export default function InboxPage() {
+  const { t } = useTranslation();
   const [filter, setFilter] = useState<'all' | 'unread'>('unread');
   const { data: items, isLoading } = useQuery<InboxItem[]>(
     ['inbox', filter],
@@ -26,10 +28,10 @@ export default function InboxPage() {
   );
 
   const typeLabels = {
-    mention: 'メンション',
-    assignment: 'アサイン',
-    comment: 'コメント',
-    approval: '承認依頼',
+    mention: t('inbox.type.mention'),
+    assignment: t('inbox.type.assignment'),
+    comment: t('inbox.type.comment'),
+    approval: t('inbox.type.approval'),
   };
 
   const typeEmojis = {
@@ -39,14 +41,14 @@ export default function InboxPage() {
     approval: '✓',
   };
 
-  if (isLoading) return <LoadingSpinner text="受信箱を読み込み中..." />;
+  if (isLoading) return <LoadingSpinner text={t('inbox.loading')} />;
 
   return (
     <div className="p-6 space-y-6 max-w-4xl mx-auto">
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">受信箱</h1>
+        <h1 className="text-3xl font-bold">{t('inbox.title')}</h1>
         <span className="text-sm text-slate-400">
-          {items?.filter((i) => !i.read).length || 0} 件未読
+          {t('inbox.unreadCount', { count: items?.filter((i) => !i.read).length || 0 })}
         </span>
       </div>
 
@@ -60,7 +62,7 @@ export default function InboxPage() {
               : 'px-4 py-2 rounded-lg text-sm font-medium bg-slate-700 text-slate-300 hover:bg-slate-600'
           }
         >
-          すべて
+          {t('common.all')}
         </button>
         <button
           onClick={() => setFilter('unread')}
@@ -70,7 +72,7 @@ export default function InboxPage() {
               : 'px-4 py-2 rounded-lg text-sm font-medium bg-slate-700 text-slate-300 hover:bg-slate-600'
           }
         >
-          未読のみ
+          {t('inbox.unreadOnly')}
         </button>
       </div>
 
@@ -101,7 +103,11 @@ export default function InboxPage() {
                             : 'default'
                       }
                     >
-                      {item.priority === 'high' ? '高' : item.priority === 'medium' ? '中' : '低'}
+                      {item.priority === 'high'
+                        ? t('issues.priorities.high')
+                        : item.priority === 'medium'
+                          ? t('issues.priorities.medium')
+                          : t('issues.priorities.low')}
                     </Badge>
                     <Badge>{typeLabels[item.type as keyof typeof typeLabels]}</Badge>
                     <span className="text-xs text-slate-500">{item.createdAt}</span>
@@ -113,7 +119,7 @@ export default function InboxPage() {
         ) : (
           <EmptyState
             icon="📭"
-            title={filter === 'unread' ? '未読はありません' : 'メッセージはありません'}
+            title={filter === 'unread' ? t('inbox.noUnread') : t('inbox.noMessages')}
           />
         )}
       </div>

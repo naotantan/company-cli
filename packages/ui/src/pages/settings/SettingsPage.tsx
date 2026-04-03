@@ -238,7 +238,7 @@ export default function SettingsPage() {
           disabled={saving === 'agentMode'}
           className="bg-sky-600 hover:bg-sky-700 disabled:opacity-50 px-4 py-2 rounded font-medium transition-colors"
         >
-          {saving === 'agentMode' ? '保存中...' : t('common.save')}
+          {saving === 'agentMode' ? t('common.saving') : t('common.save')}
         </button>
       </div>
 
@@ -270,7 +270,7 @@ export default function SettingsPage() {
           disabled={saving === 'org'}
           className="bg-sky-600 hover:bg-sky-700 disabled:opacity-50 px-4 py-2 rounded font-medium transition-colors"
         >
-          {saving === 'org' ? '保存中...' : t('common.save')}
+          {saving === 'org' ? t('common.saving') : t('common.save')}
         </button>
       </div>
 
@@ -290,7 +290,7 @@ export default function SettingsPage() {
           disabled={saving === 'language'}
           className="bg-sky-600 hover:bg-sky-700 disabled:opacity-50 px-4 py-2 rounded font-medium transition-colors"
         >
-          {saving === 'language' ? '保存中...' : t('common.save')}
+          {saving === 'language' ? t('common.saving') : t('common.save')}
         </button>
       </div>
 

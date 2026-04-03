@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { useTranslation } from '@company/i18n';
 import api from '../../lib/api.ts';
 import { authStore } from '../../stores/auth.ts';
 import { Button, Alert } from '../../components/ui';
 import { clsx } from 'clsx';
 
 export default function LoginPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -23,7 +25,7 @@ export default function LoginPage() {
       navigate('/');
     } catch (err: unknown) {
       const errorMessage =
-        err instanceof Error ? err.message : 'ログインに失敗しました';
+        err instanceof Error ? err.message : t('auth.loginError');
       setError(errorMessage);
     } finally {
       setLoading(false);
@@ -40,22 +42,22 @@ export default function LoginPage() {
               .company
             </span>
           </div>
-          <p className="text-slate-400">AIエージェント組織管理プラットフォーム</p>
+          <p className="text-slate-400">{t('auth.platformTagline')}</p>
         </div>
 
         {/* ログインフォーム */}
         <div className="bg-slate-800 rounded-xl border border-slate-700 shadow-2xl p-8 space-y-6">
           <div>
-            <h2 className="text-2xl font-bold text-slate-100">ログイン</h2>
+            <h2 className="text-2xl font-bold text-slate-100">{t('auth.login')}</h2>
             <p className="text-slate-400 text-sm mt-1">
-              アカウントにサインインしてください
+              {t('auth.loginSubtitle')}
             </p>
           </div>
 
           {error && (
             <Alert
               variant="danger"
-              title="ログインエラー"
+              title={t('auth.loginErrorTitle')}
               message={error}
             />
           )}
@@ -66,7 +68,7 @@ export default function LoginPage() {
                 htmlFor="email"
                 className="block text-sm font-medium text-slate-300 mb-2"
               >
-                メールアドレス
+                {t('auth.email')}
               </label>
               <input
                 id="email"
@@ -81,7 +83,7 @@ export default function LoginPage() {
                   'transition-colors'
                 )}
                 required
-                aria-label="メールアドレス"
+                aria-label={t('auth.email')}
               />
             </div>
 
@@ -90,7 +92,7 @@ export default function LoginPage() {
                 htmlFor="password"
                 className="block text-sm font-medium text-slate-300 mb-2"
               >
-                パスワード
+                {t('auth.password')}
               </label>
               <input
                 id="password"
@@ -105,7 +107,7 @@ export default function LoginPage() {
                   'transition-colors'
                 )}
                 required
-                aria-label="パスワード"
+                aria-label={t('auth.password')}
               />
             </div>
 
@@ -116,18 +118,18 @@ export default function LoginPage() {
               loading={loading}
               className="w-full"
             >
-              {loading ? 'ログイン中...' : 'ログイン'}
+              {loading ? t('auth.loginLoading') : t('auth.login')}
             </Button>
           </form>
 
           <div className="pt-4 border-t border-slate-700">
             <p className="text-center text-slate-400 text-sm">
-              アカウントがない場合は
+              {t('auth.noAccountCta')}
               <Link
                 to="/register"
                 className="text-sky-400 hover:text-sky-300 font-medium ml-1 transition-colors"
               >
-                登録
+                {t('auth.register')}
               </Link>
             </p>
           </div>

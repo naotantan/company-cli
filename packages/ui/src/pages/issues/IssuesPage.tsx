@@ -1,61 +1,95 @@
-import { useState } from 'react';
-import { useQuery } from 'react-query';
+import { useDeferredValue, useState } from 'react';
+import { useQuery, useQueryClient } from 'react-query';
 import { Link } from 'react-router-dom';
+import { useTranslation } from '@company/i18n';
 import api from '../../lib/api.ts';
 import { Button, Badge, Card, CardBody, LoadingSpinner, EmptyState, Alert } from '../../components/ui';
 import { clsx } from 'clsx';
 
 interface Issue {
   id: string;
+  identifier: string;
   title: string;
-  status: 'open' | 'in-progress' | 'closed';
-  priority: 'high' | 'medium' | 'low';
-  createdAt: string;
+  status: string;
+  priority: number;
+  assigned_to?: string | null;
+  created_at: string;
 }
 
-const statusLabels = {
-  open: 'オープン',
-  'in-progress': '進行中',
-  closed: '完了',
+const statusBadgeVariants: Record<string, 'info' | 'warning' | 'success' | 'default'> = {
+  backlog: 'default',
+  in_progress: 'warning',
+  done: 'success',
 };
 
-const statusBadges: Record<Issue['status'], 'info' | 'warning' | 'success'> = {
-  open: 'info',
-  'in-progress': 'warning',
-  closed: 'success',
-};
+function priorityLabel(
+  p: number,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  if (p >= 3) return t('issues.priorities.high');
+  if (p === 2) return t('issues.priorities.medium');
+  return t('issues.priorities.low');
+}
 
-const priorityLabels = {
-  high: '高',
-  medium: '中',
-  low: '低',
-};
-
-const priorityBadges: Record<Issue['priority'], 'danger' | 'warning' | 'default'> = {
-  high: 'danger',
-  medium: 'warning',
-  low: 'default',
-};
+function priorityBadgeVariant(p: number): 'danger' | 'warning' | 'default' {
+  if (p >= 3) return 'danger';
+  if (p === 2) return 'warning';
+  return 'default';
+}
 
 export default function IssuesPage() {
+  const { t } = useTranslation();
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [priorityFilter, setPriorityFilter] = useState<'all' | '3' | '2' | '1'>('all');
+  const [assigneeFilter, setAssigneeFilter] = useState<string>('all');
+  const [searchText, setSearchText] = useState('');
+  const [showCreate, setShowCreate] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const queryClient = useQueryClient();
+  const deferredSearchText = useDeferredValue(searchText);
+
+  const statusLabels: Record<string, string> = {
+    backlog: t('issues.status.backlog'),
+    in_progress: t('issues.status.inProgress'),
+    done: t('issues.status.done'),
+  };
+
   const { data: issues, isLoading, error } = useQuery<Issue[]>(
-    ['issues', statusFilter],
-    () =>
-      api
-        .get('/issues', {
-          params: { status: statusFilter === 'all' ? undefined : statusFilter },
-        })
-        .then((r) => r.data),
+    ['issues'],
+    () => api.get('/issues').then((r) => r.data.data),
   );
 
-  const openCount = issues?.filter((i) => i.status === 'open').length || 0;
-  const inProgressCount = issues?.filter((i) => i.status === 'in-progress').length || 0;
+  const handleCreate = async () => {
+    if (!newTitle.trim()) return;
+    await api.post('/issues', { title: newTitle.trim() });
+    setNewTitle('');
+    setShowCreate(false);
+    queryClient.invalidateQueries(['issues']);
+  };
+
+  const allIssues = issues ?? [];
+  const backlogCount = allIssues.filter((i) => i.status === 'backlog').length;
+  const inProgressCount = allIssues.filter((i) => i.status === 'in_progress').length;
+  const uniqueAssignees = Array.from(new Set(allIssues.map((issue) => issue.assigned_to).filter(Boolean))) as string[];
+
+  const filteredIssues = allIssues.filter((issue) => {
+    const matchesStatus = statusFilter === 'all' || issue.status === statusFilter;
+    const matchesPriority = priorityFilter === 'all' || String(issue.priority) === priorityFilter;
+    const matchesAssignee = assigneeFilter === 'all' || issue.assigned_to === assigneeFilter;
+    const search = deferredSearchText.trim().toLowerCase();
+    const matchesSearch =
+      search.length === 0 ||
+      issue.title.toLowerCase().includes(search) ||
+      issue.identifier.toLowerCase().includes(search) ||
+      (issue.assigned_to ?? '').toLowerCase().includes(search);
+
+    return matchesStatus && matchesPriority && matchesAssignee && matchesSearch;
+  });
 
   if (isLoading) {
     return (
       <div className="p-6">
-        <LoadingSpinner text="Issue一覧を読み込み中..." />
+        <LoadingSpinner text={t('issues.loading')} />
       </div>
     );
   }
@@ -63,10 +97,10 @@ export default function IssuesPage() {
   if (error) {
     return (
       <div className="p-6 space-y-4 max-w-4xl">
-        <h1 className="text-3xl font-bold">Issue</h1>
+        <h1 className="text-3xl font-bold">{t('issues.title')}</h1>
         <Alert
           variant="danger"
-          message="Issue一覧の読み込みに失敗しました。ページを更新して再度お試しください。"
+          message={t('issues.fetchError')}
         />
       </div>
     );
@@ -77,69 +111,125 @@ export default function IssuesPage() {
       <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
         <div className="space-y-2">
           <h1 className="text-4xl font-bold bg-gradient-to-r from-sky-400 to-sky-600 bg-clip-text text-transparent">
-            Issue
+            {t('issues.title')}
           </h1>
           <p className="text-slate-400">
-            オープン: <span className="font-semibold text-sky-400">{openCount}</span>件 | 進行中:
-            <span className="font-semibold text-amber-400 ml-1">{inProgressCount}</span>件
+            {t('issues.summary', { backlog: backlogCount, inProgress: inProgressCount })}
           </p>
         </div>
-        <Button variant="primary">
-          新規作成
+        <Button variant="primary" onClick={() => setShowCreate(true)}>
+          {t('issues.newIssue')}
         </Button>
       </div>
 
-      {/* フィルター */}
-      <div className="flex flex-wrap gap-2">
-        {['all', 'open', 'in-progress', 'closed'].map((status) => (
-          <button
-            key={status}
-            onClick={() => setStatusFilter(status)}
-            className={clsx(
-              'px-4 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-slate-900',
-              statusFilter === status
-                ? 'bg-sky-600 text-white'
-                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-            )}
-            aria-pressed={statusFilter === status}
-          >
-            {status === 'all' ? 'すべて' : statusLabels[status as keyof typeof statusLabels]}
-          </button>
-        ))}
+      {showCreate && (
+        <div className="bg-slate-800 rounded-lg p-4 border border-slate-700 space-y-3">
+          <h2 className="text-sm font-bold">{t('issues.createTitle')}</h2>
+          <input
+            type="text"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            placeholder={t('issues.titlePlaceholder')}
+            className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={handleCreate}
+              disabled={!newTitle.trim()}
+              className="bg-sky-600 hover:bg-sky-700 disabled:opacity-50 px-4 py-2 rounded text-sm font-medium"
+            >
+              {t('common.create')}
+            </button>
+            <button
+              onClick={() => {
+                setShowCreate(false);
+                setNewTitle('');
+              }}
+              className="bg-slate-600 hover:bg-slate-500 px-4 py-2 rounded text-sm font-medium"
+            >
+              {t('common.cancel')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,0.8fr))] gap-3">
+        <input
+          type="search"
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          placeholder={t('issues.searchPlaceholder')}
+          className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+        />
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+        >
+          <option value="all">{t('issues.allStatuses')}</option>
+          <option value="backlog">{t('issues.status.backlog')}</option>
+          <option value="in_progress">{t('issues.status.inProgress')}</option>
+          <option value="done">{t('issues.status.done')}</option>
+        </select>
+        <select
+          value={priorityFilter}
+          onChange={(e) => setPriorityFilter(e.target.value as 'all' | '3' | '2' | '1')}
+          className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+        >
+          <option value="all">{t('issues.allPriorities')}</option>
+          <option value="3">{t('issues.priorities.high')}</option>
+          <option value="2">{t('issues.priorities.medium')}</option>
+          <option value="1">{t('issues.priorities.low')}</option>
+        </select>
+        <select
+          value={assigneeFilter}
+          onChange={(e) => setAssigneeFilter(e.target.value)}
+          className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+        >
+          <option value="all">{t('issues.allAssignees')}</option>
+          {uniqueAssignees.map((assignee) => (
+            <option key={assignee} value={assignee}>
+              {assignee}
+            </option>
+          ))}
+        </select>
       </div>
 
-      {/* Alert */}
       {inProgressCount > 5 && (
         <Alert
           variant="warning"
-          title="進行中のIssueが多いです"
-          message={`現在 ${inProgressCount} 件のIssueが進行中です。優先度を確認してください。`}
+          title={t('issues.warningTitle')}
+          message={t('issues.warningMessage', { count: inProgressCount })}
         />
       )}
 
-      {/* Issue一覧 */}
-      {issues && issues.length > 0 ? (
+      {filteredIssues.length > 0 ? (
         <div className="space-y-3">
-          {issues.map((issue) => (
-            <Link
-              key={issue.id}
-              to={`/issues/${issue.id}`}
-              className="group"
-            >
+          {filteredIssues.map((issue) => (
+            <Link key={issue.id} to={`/issues/${issue.id}`} className="group">
               <Card hoverable>
-                <CardBody className="flex items-center justify-between gap-4">
+                <CardBody className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                   <div className="flex-1 min-w-0">
+                    <p className="text-xs text-slate-500 mb-0.5">{issue.identifier}</p>
                     <h3 className="font-semibold text-slate-100 group-hover:text-sky-400 transition-colors truncate">
                       {issue.title}
                     </h3>
-                    <p className="text-xs text-slate-500 mt-1">{issue.createdAt}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                      <span>{issue.created_at}</span>
+                      <span>•</span>
+                      <span>
+                        {issue.assigned_to
+                          ? t('issues.assignedToValue', { assignee: issue.assigned_to })
+                          : t('issues.unassigned')}
+                      </span>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    <Badge variant={priorityBadges[issue.priority]}>
-                      優先度: {priorityLabels[issue.priority]}
+                    <Badge variant={priorityBadgeVariant(issue.priority)}>
+                      {t('issues.priorityValue', { priority: priorityLabel(issue.priority, t) })}
                     </Badge>
-                    <Badge variant={statusBadges[issue.status]}>
-                      {statusLabels[issue.status]}
+                    <Badge variant={statusBadgeVariants[issue.status] ?? 'default'}>
+                      {statusLabels[issue.status] ?? issue.status}
                     </Badge>
                   </div>
                 </CardBody>
@@ -149,14 +239,10 @@ export default function IssuesPage() {
         </div>
       ) : (
         <EmptyState
-          icon="📋"
-          title={
-            statusFilter === 'all'
-              ? 'Issueがありません'
-              : `${statusLabels[statusFilter as keyof typeof statusLabels]}のIssueはありません`
-          }
-          description="新しいIssueを作成して、プロジェクトを進めましょう"
-          action={<Button variant="primary">Issue作成</Button>}
+          icon="□"
+          title={t('issues.noMatchingIssues')}
+          description={t('issues.noMatchingIssuesDescription')}
+          action={<Button variant="primary" onClick={() => setShowCreate(true)}>{t('issues.newIssue')}</Button>}
         />
       )}
     </div>

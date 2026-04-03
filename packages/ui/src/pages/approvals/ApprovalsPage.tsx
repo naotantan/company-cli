@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useQuery } from 'react-query';
+import { useQuery, useQueryClient } from 'react-query';
+import { useTranslation } from '@company/i18n';
 import api from '../../lib/api.ts';
 import {
   Button,
@@ -12,52 +13,76 @@ import {
   EmptyState,
   Alert,
 } from '../../components/ui';
+import { clsx } from 'clsx';
 
 interface Approval {
   id: string;
-  title: string;
-  requestedBy: string;
-  status: string;
-  createdAt: string;
+  issue_id: string;
+  approver_id: string;
+  status: 'pending' | 'approved' | 'rejected' | string;
+  created_at: string;
+  decided_at?: string | null;
 }
 
-export default function ApprovalsPage() {
-  const [approving, setApproving] = useState<string | null>(null);
-  const [rejected, setRejected] = useState<Set<string>>(new Set());
+const statusBadgeVariants: Record<string, 'pending' | 'success' | 'danger'> = {
+  pending: 'pending',
+  approved: 'success',
+  rejected: 'danger',
+};
 
-  const { data: approvals, isLoading, error, refetch } = useQuery<Approval[]>(
-    'approvals',
-    () => api.get('/approvals').then((r) => r.data),
+export default function ApprovalsPage() {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
+  const [actingId, setActingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const statusLabels: Record<string, string> = {
+    pending: t('approvals.pending'),
+    approved: t('approvals.approved'),
+    rejected: t('approvals.rejected'),
+  };
+
+  const { data: approvals, isLoading, error } = useQuery<Approval[]>(
+    ['approvals', statusFilter],
+    () =>
+      api
+        .get('/approvals', {
+          params: { status: statusFilter === 'all' ? undefined : statusFilter },
+        })
+        .then((r) => r.data.data),
   );
 
   const handleApprove = async (id: string) => {
-    setApproving(id);
+    setActingId(id);
+    setActionError(null);
     try {
       await api.post(`/approvals/${id}/approve`);
-      await refetch();
+      await queryClient.invalidateQueries('approvals');
+    } catch (err: any) {
+      setActionError(err?.response?.data?.message ?? t('approvals.approveFailed'));
     } finally {
-      setApproving(null);
+      setActingId(null);
     }
   };
 
   const handleReject = async (id: string) => {
-    setRejected((prev) => new Set(prev).add(id));
+    setActingId(id);
+    setActionError(null);
     try {
       await api.post(`/approvals/${id}/reject`);
-      await refetch();
+      await queryClient.invalidateQueries('approvals');
+    } catch (err: any) {
+      setActionError(err?.response?.data?.message ?? t('approvals.rejectFailed'));
     } finally {
-      setRejected((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
+      setActingId(null);
     }
   };
 
   if (isLoading) {
     return (
       <div className="p-6">
-        <LoadingSpinner text="承認リストを読み込み中..." />
+        <LoadingSpinner text={t('approvals.loading')} />
       </div>
     );
   }
@@ -65,83 +90,133 @@ export default function ApprovalsPage() {
   if (error) {
     return (
       <div className="p-6 space-y-4 max-w-4xl">
-        <h1 className="text-3xl font-bold">承認待ち</h1>
+        <h1 className="text-3xl font-bold">{t('approvals.title')}</h1>
         <Alert
           variant="danger"
-          message="承認リストの読み込みに失敗しました。ページを更新して再度お試しください。"
+          message={t('approvals.fetchError')}
         />
       </div>
     );
   }
 
-  const pendingCount = approvals?.length || 0;
+  const items = approvals ?? [];
+  const pendingCount = items.filter((approval) => approval.status === 'pending').length;
+  const approvedCount = items.filter((approval) => approval.status === 'approved').length;
+  const rejectedCount = items.filter((approval) => approval.status === 'rejected').length;
 
   return (
-    <div className="p-6 space-y-6 max-w-4xl mx-auto">
+    <div className="p-6 space-y-6 max-w-5xl mx-auto">
       <div className="space-y-2">
         <h1 className="text-4xl font-bold bg-gradient-to-r from-sky-400 to-sky-600 bg-clip-text text-transparent">
-          承認待ち
+          {t('approvals.title')}
         </h1>
         <p className="text-slate-400">
-          {pendingCount} 件の承認リクエストがあります
+          {t('approvals.summary', {
+            pending: pendingCount,
+            approved: approvedCount,
+            rejected: rejectedCount,
+          })}
         </p>
       </div>
 
-      {pendingCount > 0 && (
+      {actionError && <Alert variant="danger" message={actionError} onClose={() => setActionError(null)} />}
+
+      {pendingCount > 0 && statusFilter !== 'approved' && (
         <Alert
           variant="warning"
-          title="アクション必須"
-          message={`${pendingCount} 件の承認リクエストが待機中です。迅速な対応をお願いします。`}
+          title={t('approvals.actionRequiredTitle')}
+          message={t('approvals.actionRequiredMessage', { count: pendingCount })}
         />
       )}
 
+      <div className="flex flex-wrap gap-2">
+        {(['pending', 'approved', 'rejected', 'all'] as const).map((status) => (
+          <button
+            key={status}
+            onClick={() => setStatusFilter(status)}
+            className={clsx(
+              'rounded-lg px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-slate-900',
+              statusFilter === status
+                ? 'bg-sky-600 text-white'
+                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+            )}
+          >
+            {status === 'all' ? t('common.all') : statusLabels[status]}
+          </button>
+        ))}
+      </div>
+
       <div className="space-y-4">
-        {approvals && approvals.length > 0 ? (
-          approvals.map((approval) => (
-            <Card key={approval.id} hoverable>
-              <CardHeader className="flex items-start justify-between">
-                <div className="flex-1">
-                  <h3 className="font-bold text-lg">{approval.title}</h3>
-                  <div className="flex items-center gap-2 mt-2">
-                    <Badge variant="pending">保留中</Badge>
-                    <span className="text-xs text-slate-500">
-                      リクエスト者: {approval.requestedBy}
-                    </span>
+        {items.length > 0 ? (
+          items.map((approval) => {
+            const isPending = approval.status === 'pending';
+
+            return (
+              <Card key={approval.id} hoverable>
+                <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Badge variant={statusBadgeVariants[approval.status] ?? 'default'}>
+                        {statusLabels[approval.status] ?? approval.status}
+                      </Badge>
+                      <span className="text-xs text-slate-500">{t('approvals.approvalId', { id: approval.id })}</span>
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-100">{t('approvals.issueTitle', { id: approval.issue_id })}</h3>
+                      <p className="mt-1 text-sm text-slate-400">{t('approvals.approver', { id: approval.approver_id })}</p>
+                    </div>
                   </div>
-                </div>
-              </CardHeader>
+                  <div className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs text-slate-400">
+                    {t('approvals.createdAtValue', { value: approval.created_at })}
+                  </div>
+                </CardHeader>
 
-              <CardBody>
-                <p className="text-sm text-slate-400">{approval.createdAt}</p>
-              </CardBody>
+                <CardBody className="space-y-3 text-sm">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('approvals.issueContext')}</p>
+                      <p className="mt-2 break-all text-slate-300">{approval.issue_id}</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{t('approvals.decision')}</p>
+                      <p className="mt-2 text-slate-300">{approval.decided_at ?? t('approvals.undecided')}</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    {t('approvals.apiNote')}
+                  </p>
+                </CardBody>
 
-              <CardFooter className="flex gap-3">
-                <Button
-                  variant="success"
-                  size="md"
-                  loading={approving === approval.id}
-                  onClick={() => handleApprove(approval.id)}
-                  disabled={approving !== null || rejected.has(approval.id)}
-                >
-                  承認
-                </Button>
-                <Button
-                  variant="danger"
-                  size="md"
-                  loading={rejected.has(approval.id)}
-                  onClick={() => handleReject(approval.id)}
-                  disabled={approving !== null || rejected.has(approval.id)}
-                >
-                  却下
-                </Button>
-              </CardFooter>
-            </Card>
-          ))
+                {isPending && (
+                  <CardFooter className="flex flex-wrap gap-3">
+                    <Button
+                      variant="success"
+                      size="md"
+                      loading={actingId === approval.id}
+                      onClick={() => handleApprove(approval.id)}
+                      disabled={actingId !== null}
+                    >
+                      {t('approvals.approve')}
+                    </Button>
+                    <Button
+                      variant="danger"
+                      size="md"
+                      loading={actingId === approval.id}
+                      onClick={() => handleReject(approval.id)}
+                      disabled={actingId !== null}
+                    >
+                      {t('approvals.reject')}
+                    </Button>
+                  </CardFooter>
+                )}
+              </Card>
+            );
+          })
         ) : (
           <EmptyState
-            icon="✓"
-            title="承認待ちはありません"
-            description="すべての承認リクエストが処理済みです"
+            icon="□"
+            title={statusFilter === 'pending' ? t('approvals.noApprovals') : t('approvals.noMatchingApprovals')}
+            description={t('approvals.emptyDescription')}
           />
         )}
       </div>

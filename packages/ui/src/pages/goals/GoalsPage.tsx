@@ -1,5 +1,6 @@
 import { useQuery } from 'react-query';
 import { Link } from 'react-router-dom';
+import { useTranslation } from '@company/i18n';
 import api from '../../lib/api.ts';
 
 interface Goal {
@@ -11,20 +12,21 @@ interface Goal {
 }
 
 export default function GoalsPage() {
+  const { t } = useTranslation();
   const { data: goals, isLoading, error } = useQuery<Goal[]>(
     'goals',
     () => api.get('/goals').then((r) => r.data),
   );
 
-  if (isLoading) return <div className="p-6">読み込み中...</div>;
-  if (error) return <div className="p-6 text-red-400">エラーが発生しました</div>;
+  if (isLoading) return <div className="p-6">{t('common.loading')}</div>;
+  if (error) return <div className="p-6 text-red-400">{t('errors.serverError')}</div>;
 
   return (
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">ゴール</h1>
+        <h1 className="text-3xl font-bold">{t('goals.title')}</h1>
         <button className="bg-sky-600 hover:bg-sky-700 px-4 py-2 rounded font-medium">
-          新規作成
+          {t('goals.newGoal')}
         </button>
       </div>
 
@@ -46,12 +48,12 @@ export default function GoalsPage() {
                 ></div>
               </div>
               <p className="text-xs text-slate-400 mt-2">
-                進捗: {goal.progress}%
+                {t('goals.progressValue', { value: goal.progress })}
               </p>
             </div>
           ))
         ) : (
-          <p className="text-slate-400">ゴールはありません</p>
+          <p className="text-slate-400">{t('goals.noGoals')}</p>
         )}
       </div>
     </div>

@@ -1,7 +1,9 @@
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from '@company/i18n';
 import { Button } from '../components/ui';
 
 export default function NotFoundPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
   return (
@@ -11,11 +13,11 @@ export default function NotFoundPage() {
           <h1 className="text-9xl font-bold bg-gradient-to-r from-sky-400 to-sky-600 bg-clip-text text-transparent mb-2">
             404
           </h1>
-          <p className="text-slate-400 text-lg">ページが見つかりません</p>
+          <p className="text-slate-400 text-lg">{t('errors.notFound')}</p>
         </div>
 
         <p className="text-slate-400 mb-8">
-          申し訳ありません。アクセスしようとしたページは存在しないか、削除された可能性があります。
+          {t('errors.notFoundMessage')}
         </p>
 
         <div className="flex flex-col gap-3">
@@ -24,14 +26,14 @@ export default function NotFoundPage() {
             onClick={() => navigate('/')}
             className="w-full"
           >
-            ホームに戻る
+            {t('errors.goHome')}
           </Button>
           <Button
             variant="secondary"
             onClick={() => navigate(-1)}
             className="w-full"
           >
-            前のページに戻る
+            {t('layout.goBack')}
           </Button>
         </div>
 

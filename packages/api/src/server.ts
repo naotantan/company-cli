@@ -40,11 +40,16 @@ export function createApp(): Express {
 
   // CORS設定（複数オリジンのホワイトリスト対応）
   const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',');
+  const devOriginPattern = /^https?:\/\/(?:localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[0-1])\.\d+\.\d+)(?::\d+)?$/;
   app.use(
     cors({
       origin: (origin, callback) => {
         // 開発時はoriginなしのリクエスト（curlなど）も許可
-        if (!origin || allowedOrigins.includes(origin.trim())) {
+        if (
+          !origin ||
+          allowedOrigins.includes(origin.trim()) ||
+          (process.env.NODE_ENV === 'development' && devOriginPattern.test(origin.trim()))
+        ) {
           callback(null, true);
         } else {
           callback(new Error('CORS policy violation'));

@@ -1,4 +1,5 @@
 import { clsx } from 'clsx';
+import { useTranslation } from '@company/i18n';
 
 type AlertVariant = 'success' | 'warning' | 'danger' | 'info';
 
@@ -17,6 +18,7 @@ export function Alert({
   onClose,
   icon,
 }: AlertProps) {
+  const { t } = useTranslation();
   const variants: Record<AlertVariant, string> = {
     success: 'bg-emerald-900/30 border-emerald-700 text-emerald-200',
     warning: 'bg-amber-900/30 border-amber-700 text-amber-200',
@@ -47,7 +49,7 @@ export function Alert({
         <button
           onClick={onClose}
           className="flex-shrink-0 text-lg hover:opacity-70 transition-opacity"
-          aria-label="アラートを閉じる"
+          aria-label={t('common.close')}
         >
           ✕
         </button>
