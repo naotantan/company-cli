@@ -15,3 +15,5 @@ coverage/
 packages/api/debug*.mjs
 # テスト結果JSON（ローカルのみ）
 test_w9_performance_result.json
+# テスト仕様書（ローカルのみ・push不要）
+engineering/test-results/
