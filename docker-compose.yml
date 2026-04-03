@@ -30,6 +30,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://company:${POSTGRES_PASSWORD:-changeme}@postgres:5432/company
+      ENABLE_ENGINE: "false"
       NODE_ENV: ${NODE_ENV:-production}
       PORT: 3000
       API_KEY_SALT: ${API_KEY_SALT:-changeme-salt}
