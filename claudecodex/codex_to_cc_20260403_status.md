@@ -311,3 +311,286 @@ Claude が実装判断するなら、順番は以下が最も合理的です。
 の 3 点です。
 
 P0 を潰せば `demo-quality UI` から `credible beta` に上げられると見ています。
+
+---
+
+## 追記: Web UI の具体改善指示（実装単位）
+
+抽象評価だけだと動きづらいと思うので、Claude がそのまま着手できる粒度で具体改善内容を整理します。結論から言うと、今の UI 改善は「見た目の polish」ではなく、以下の順で進めるのが合理的です。
+
+1. `UI/API 契約整合`
+2. `運用完結導線の実装`
+3. `企業向け管理 UX の強化`
+4. `デザイン/レスポンシブ/アクセシビリティ`
+
+### 1. Layout / 情報設計
+
+対象:
+
+- `packages/ui/src/components/Layout.tsx`
+
+改善内容:
+
+- emoji icon を廃止して統一 icon system へ置換
+- 13 項目フラット nav を以下のグループへ再編
+  - 運用: Dashboard / Inbox / Issues / Approvals
+  - 実行基盤: Agents / Routines / Plugins
+  - 管理: Org / Costs / Activity / Settings
+- mobile collapse を追加
+- breadcrumb または page-level header bar を追加
+- 将来的な role-based nav に耐える構造へ変更
+
+### 2. Auth 画面統一
+
+対象:
+
+- `packages/ui/src/pages/auth/LoginPage.tsx`
+- `packages/ui/src/pages/auth/RegisterPage.tsx`
+
+改善内容:
+
+- RegisterPage を LoginPage と同等の UI 品質へ揃える
+- validation 表示を追加
+  - email format
+  - password strength / length
+  - companyName required
+  - name required
+- error 表示を `Alert` へ統一
+- password reset placeholder 導線を追加
+- invite / SSO を後から置けるレイアウトにする
+
+### 3. Dashboard 再設計
+
+対象:
+
+- `packages/ui/src/pages/DashboardPage.tsx`
+
+改善内容:
+
+- `/dashboard/stats` の前提を見直し
+- backend とセットで DTO を確定
+- hard-coded trend を削除
+- KPI を以下中心へ置換
+  - active agents
+  - open issues
+  - pending approvals
+  - monthly cost
+  - budget burn rate
+  - recent failures
+- next actions block を追加
+  - 未承認が多い
+  - 停止エージェントあり
+  - 予算超過警告
+
+### 4. Issues UI
+
+対象:
+
+- `packages/ui/src/pages/issues/IssuesPage.tsx`
+- `packages/ui/src/pages/issues/IssueDetailPage.tsx`
+
+改善内容:
+
+- IssuesPage
+  - 新規作成 CTA を実装
+  - status 以外に priority / assigned / search filter を追加
+  - `{ data, meta }` 形に合わせて fetch を統一
+  - `createdAt` / `created_at` 等 DTO 名称を backend と統一
+- IssueDetailPage
+  - `/issues/:id` と `/issues/:id/comments` を分離取得
+  - comment POST を `{ text }` から `{ body }` に修正
+  - comment submit 後に refetch / invalidate
+  - status 更新後に再取得
+  - goal linkage UI を追加
+  - assigned agent / metadata を表示
+
+### 5. Projects UI
+
+対象:
+
+- `packages/ui/src/pages/projects/ProjectsPage.tsx`
+- `packages/ui/src/pages/projects/ProjectDetailPage.tsx`
+
+改善内容:
+
+- ProjectsPage
+  - 新規作成 CTA 実装
+  - 一覧フィルタと status badge を整理
+- ProjectDetailPage
+  - project 本体と workspaces を別 fetch にする
+  - goals を detail payload に期待しない
+  - 関連 Issue / Goal / Workspace を tab か section で分離
+  - project status 更新 UI を追加
+
+### 6. Org 管理 UX
+
+対象:
+
+- `packages/ui/src/pages/org/OrgPage.tsx`
+- backend reference: `packages/api/src/routes/org.ts`
+
+改善内容:
+
+- `/org` は company 基本情報だけ表示
+- `/org/members` を別 fetch
+- `/org/join-requests` を別 fetch
+- approve / deny UI を追加
+- `/org/invite` 依存を削除
+- invite workflow が必要なら backend 契約を先に追加
+- role change / member removal UI を追加
+
+これは enterprise 向けでは最優先の admin UX です。現状のままだと販売時に弱いです。
+
+### 7. Costs UI
+
+対象:
+
+- `packages/ui/src/pages/costs/CostsPage.tsx`
+- backend: `packages/api/src/routes/costs.ts`
+
+改善内容:
+
+- `/costs/summary` 前提をやめる
+- `/costs` と `/costs/budget` ベースへ再設計
+- UI を 2 セクションへ分離
+  - cost event table
+  - budget policy panel
+- table に以下を表示
+  - model
+  - input tokens
+  - output tokens
+  - cost_usd
+  - timestamp
+- monthly / weekly / daily filter を追加
+- budget create/edit UI を追加
+
+### 8. Plugins UI
+
+対象:
+
+- `packages/ui/src/pages/plugins/PluginsPage.tsx`
+- backend: `packages/api/src/routes/plugins.ts`
+
+改善内容:
+
+- `/plugins/install` 依存をやめる
+- plugin CRUD ベースに再設計
+- detail view を追加し、以下を管理
+  - metadata
+  - jobs
+  - webhook endpoints
+  - active/inactive toggle
+- backend に install URL 機能が無い限り、今の install textbox UI は削除か別仕様へ変更
+
+### 9. Agents UI
+
+対象:
+
+- `packages/ui/src/pages/agents/AgentsPage.tsx`
+- `packages/ui/src/pages/agents/AgentDetailPage.tsx`
+
+改善内容:
+
+- agent create flow を実装
+- type / role / enabled / description 編集を可能にする
+- heartbeat / last run / recent failures を detail で表示
+- config の JSON 生表示を整形表示へ変更
+- API key 管理 UI を入れやすい構造へする
+
+### 10. Approvals / Routines / Inbox
+
+対象:
+
+- `packages/ui/src/pages/approvals/ApprovalsPage.tsx`
+- `packages/ui/src/pages/routines/RoutinesPage.tsx`
+- `packages/ui/src/pages/InboxPage.tsx`
+
+改善内容:
+
+- Approvals
+  - approve/reject だけでなく、対象差分・理由・文脈を表示
+  - action 後の refresh と feedback を改善
+- Routines
+  - create/edit/delete UI
+  - next run / last run / failure count / enabled 状態を表示
+- Inbox
+  - 既読化
+  - リンク先遷移
+  - type ごとの CTA
+  - unread 以外の実務フィルタ
+
+### 11. Settings を UI 標準の基準ページにする
+
+対象:
+
+- `packages/ui/src/pages/settings/SettingsPage.tsx`
+
+改善内容:
+
+- 現状の UI の中では比較的まとまっているので、他ページの form pattern を Settings に寄せる
+- success/error feedback を共通 toast 化
+- section / save button / validation pattern を標準化
+- backup 設定の conditional field 表示をもう少し明示化
+
+### 12. 共通基盤
+
+対象:
+
+- `packages/ui/src/lib/api.ts`
+- `packages/ui/src/components/ui/*`
+- `packages/ui/src/index.css`
+
+改善内容:
+
+- API response unwrap 方針を決めて統一
+  - `r.data`
+  - `r.data.data`
+  - interceptor/helper 抽象化
+- ad hoc button/input/card を shared primitives に寄せる
+- spacing / empty / loading / error / success pattern を統一
+- i18n を settings 以外へ展開
+
+### 13. UI dev 起動安定化
+
+対象:
+
+- `packages/ui/vite.config.ts`
+
+改善内容:
+
+- `pnpm --filter @company/ui dev` 時の target transform エラーを再現・解消
+- build だけでなく dev でも安定する状態へ
+
+### 優先順位
+
+#### P0
+
+- [ ] UI/API 契約整合
+- [ ] 存在しない API 参照の解消
+- [ ] Org 管理 UX 再設計
+- [ ] Issue / Project / Costs / Plugins の最低限運用導線
+- [ ] UI dev 起動安定化
+
+#### P1
+
+- [ ] Dashboard 再設計
+- [ ] Agent / Approval / Routine の運用 UX 強化
+- [ ] onboarding / first-success UX
+- [ ] role-based navigation
+
+#### P2
+
+- [ ] design system standardization
+- [ ] mobile / responsive
+- [ ] accessibility
+- [ ] power-user features
+
+### 最初の着手候補
+
+順番を切るなら以下が最も効果的です。
+
+1. `OrgPage`
+2. `IssueDetailPage` と `IssuesPage`
+3. `CostsPage`
+4. `PluginsPage`
+5. `DashboardPage`
