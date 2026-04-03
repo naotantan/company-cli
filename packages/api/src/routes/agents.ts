@@ -177,6 +177,16 @@ agentsRouter.get('/:agentId/runs', async (req, res, next) => {
   try {
     const limit = Math.min(parseInt((req.query.limit as string) || '20'), 100);
     const db = getDb();
+    // 自社エージェントか確認してからログを返す
+    const agentCheck = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, req.params.agentId), eq(agents.company_id, req.companyId!)))
+      .limit(1);
+    if (!agentCheck.length) {
+      res.status(404).json({ error: 'not_found', message: 'エージェントが見つかりません' });
+      return;
+    }
     const runs = await db
       .select()
       .from(heartbeat_runs)

@@ -91,6 +91,16 @@ routinesRouter.delete('/:routineId', async (req, res, next) => {
 routinesRouter.post('/:routineId/run', async (req, res, next) => {
   try {
     const db = getDb();
+    // 自社のルーチンか確認
+    const routineCheck = await db
+      .select({ id: routines.id })
+      .from(routines)
+      .where(and(eq(routines.id, req.params.routineId), eq(routines.company_id, req.companyId!)))
+      .limit(1);
+    if (!routineCheck.length) {
+      res.status(404).json({ error: 'not_found', message: 'Routineが見つかりません' });
+      return;
+    }
     const run = await db
       .insert(routine_runs)
       .values({

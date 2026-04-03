@@ -126,6 +126,16 @@ projectsRouter.delete('/:projectId', async (req, res, next) => {
 projectsRouter.get('/:projectId/workspaces', async (req, res, next) => {
   try {
     const db = getDb();
+    // プロジェクトが自社のものか確認してからワークスペースを返す
+    const projectCheck = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(and(eq(projects.id, req.params.projectId), eq(projects.company_id, req.companyId!)))
+      .limit(1);
+    if (!projectCheck.length) {
+      res.status(404).json({ error: 'not_found', message: 'Projectが見つかりません' });
+      return;
+    }
     const workspaces = await db
       .select()
       .from(project_workspaces)

@@ -90,9 +90,19 @@ orgRouter.get('/join-requests', async (req, res, next) => {
 });
 
 // POST /api/org/join-requests/:id/approve
+const VALID_MEMBER_ROLES = ['member', 'viewer'] as const;
+
 orgRouter.post('/join-requests/:id/approve', async (req, res, next) => {
   try {
     const { role = 'member' } = req.body as { role?: string };
+    // admin 昇格を防ぐため許可ロールを制限する
+    if (!VALID_MEMBER_ROLES.includes(role as typeof VALID_MEMBER_ROLES[number])) {
+      res.status(400).json({
+        error: 'validation_failed',
+        message: `role は ${VALID_MEMBER_ROLES.join(', ')} のいずれかである必要があります`,
+      });
+      return;
+    }
     const db = getDb();
     const rows = await db
       .select()
