@@ -1,6 +1,74 @@
 import { Router, type Router as RouterType } from 'express';
 import { getDb, plugins, plugin_jobs, plugin_job_runs, plugin_webhooks } from '@company/db';
 import { eq, and } from 'drizzle-orm';
+import { promises as dns } from 'dns';
+import { isIP } from 'net';
+
+/**
+ * SSRF対策: webhook URL がプライベート/ループバックIPを指していないか検証する
+ * - ホスト名は DNS 解決して IP アドレスを確認する
+ */
+async function validateWebhookUrl(url: string): Promise<{ valid: boolean; reason?: string }> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return { valid: false, reason: 'http または https のみ許可されます' };
+    }
+  } catch {
+    return { valid: false, reason: 'url の形式が不正です' };
+  }
+
+  const hostname = parsed.hostname;
+
+  // IP アドレスが直接指定された場合はそのままチェック
+  const directIp = isIP(hostname) !== 0 ? hostname : null;
+  const ipsToCheck: string[] = [];
+
+  if (directIp) {
+    ipsToCheck.push(directIp);
+  } else {
+    // DNS 解決してすべての A/AAAA レコードを検査
+    try {
+      const v4 = await dns.resolve4(hostname).catch(() => []);
+      const v6 = await dns.resolve6(hostname).catch(() => []);
+      ipsToCheck.push(...v4, ...v6);
+    } catch {
+      return { valid: false, reason: 'ホスト名を解決できません' };
+    }
+  }
+
+  for (const ip of ipsToCheck) {
+    if (isPrivateIp(ip)) {
+      return { valid: false, reason: 'プライベートまたはループバックアドレスへのアクセスは禁止されています' };
+    }
+  }
+
+  return { valid: true };
+}
+
+/** RFC 1918 / ループバック / リンクローカル などプライベートIP判定 */
+function isPrivateIp(ip: string): boolean {
+  // IPv4
+  const v4Parts = ip.split('.').map(Number);
+  if (v4Parts.length === 4) {
+    const [a, b] = v4Parts;
+    if (a === 127) return true;                           // 127.0.0.0/8 ループバック
+    if (a === 10) return true;                            // 10.0.0.0/8
+    if (a === 172 && b >= 16 && b <= 31) return true;    // 172.16.0.0/12
+    if (a === 192 && b === 168) return true;              // 192.168.0.0/16
+    if (a === 169 && b === 254) return true;              // 169.254.0.0/16 リンクローカル
+    if (a === 0) return true;                             // 0.0.0.0/8
+    if (a === 100 && b >= 64 && b <= 127) return true;   // 100.64.0.0/10 共有アドレス空間
+    return false;
+  }
+  // IPv6 ループバック / リンクローカル / ULA
+  const lower = ip.toLowerCase();
+  if (lower === '::1') return true;
+  if (lower.startsWith('fe80:')) return true;            // リンクローカル
+  if (lower.startsWith('fc') || lower.startsWith('fd')) return true; // ULA
+  return false;
+}
 
 export const pluginsRouter: RouterType = Router();
 
@@ -242,12 +310,10 @@ pluginsRouter.post('/:pluginId/webhooks', async (req, res, next) => {
       });
       return;
     }
-    // URL形式バリデーション
-    try {
-      const parsed = new URL(url);
-      if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error();
-    } catch {
-      res.status(400).json({ error: 'validation_failed', message: 'url の形式が不正です' });
+    // URL バリデーション（プロトコル + SSRF対策でプライベートIPブロック）
+    const urlCheck = await validateWebhookUrl(url);
+    if (!urlCheck.valid) {
+      res.status(400).json({ error: 'validation_failed', message: urlCheck.reason || 'url が無効です' });
       return;
     }
     const db = getDb();

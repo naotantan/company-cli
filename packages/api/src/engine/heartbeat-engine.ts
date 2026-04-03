@@ -96,12 +96,18 @@ async function runAgentHeartbeat(agentId: string, companyId: string): Promise<vo
 async function executeAgentProcess(agentId: string, runId: string): Promise<void> {
   return new Promise((resolve, reject) => {
     // アダプター実行スクリプトを起動
+    // agentId/runId を引数に埋め込まず環境変数で渡す（コマンドインジェクション対策）
     const proc = spawn('node', [
       '-e',
-      `console.log(JSON.stringify({ agent_id: '${agentId}', run_id: '${runId}', status: 'ok' }))`,
+      'console.log(JSON.stringify({ agent_id: process.env.AGENT_ID, run_id: process.env.RUN_ID, status: "ok" }))',
     ], {
       timeout: 60000, // 60秒タイムアウト
       stdio: ['ignore', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        AGENT_ID: agentId,
+        RUN_ID: runId,
+      },
     });
 
     const stdout: string[] = [];
