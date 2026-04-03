@@ -1,0 +1,21 @@
+{
+  "approvals": {
+    "contextUnavailableTitle": "Some context could not be loaded",
+    "contextUnavailableMessage": "The approvals feed is shown, but issue or member enrichment failed.",
+    "pendingCardDescription": "Requests that still require a decision",
+    "approvedCardDescription": "Requests that have already been approved",
+    "rejectedCardDescription": "Requests that have already been rejected",
+    "decidedAtValue": "Decided: {{value}}",
+    "routing": "ROUTING",
+    "contextNote": "In addition to the approval feed, this page shows only the context that could be enriched from the issues and members lists.",
+    "viewIssue": "Open Issue",
+    "issueUnavailable": "Related issue could not be loaded",
+    "issueIdentifierValue": "Identifier: {{value}}",
+    "issueAssigneeValue": "Assignee: {{value}}",
+    "issueCreatedAtValue": "Issue created: {{value}}",
+    "approverValue": "Approver: {{id}}",
+    "approverRoleValue": "Role: {{role}}",
+    "approverFallback": "No matching organization member record",
+    "notAvailable": "Unavailable"
+  }
+}

@@ -80,9 +80,10 @@ const handleLanguageChange = (lang: string) => {
 
 ## Adding New Translations
 
-1. `src/locales/ja.json` に日本語翻訳を追加
-2. `src/locales/en.json` に英語翻訳を追加
-3. パッケージを rebuild：`pnpm --filter @company/i18n build`
+1. 既存キーの更新は `src/locales/ja.json` と `src/locales/en.json` を編集
+2. 機能単位の追加は `src/locales/features/` 配下に `*-ja.json` / `*-en.json` を作成
+3. `src/index.ts` の `mergeTranslations(...)` に新しい feature locale を追加
+4. パッケージを rebuild：`pnpm --filter @company/i18n build`
 
 ## Interpolation
 

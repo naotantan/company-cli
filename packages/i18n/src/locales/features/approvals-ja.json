@@ -1,0 +1,21 @@
+{
+  "approvals": {
+    "contextUnavailableTitle": "一部の文脈情報を取得できませんでした",
+    "contextUnavailableMessage": "承認APIは表示していますが、Issue またはメンバー情報の補完に失敗しました。",
+    "pendingCardDescription": "すぐに判断が必要な承認依頼",
+    "approvedCardDescription": "すでに処理済みの承認",
+    "rejectedCardDescription": "却下済みの承認リクエスト",
+    "decidedAtValue": "決定: {{value}}",
+    "routing": "ROUTING",
+    "contextNote": "承認一覧のベースデータに加えて、Issue 一覧とメンバー一覧から補完可能な文脈だけを表示しています。",
+    "viewIssue": "Issue を開く",
+    "issueUnavailable": "関連 Issue を取得できません",
+    "issueIdentifierValue": "識別子: {{value}}",
+    "issueAssigneeValue": "担当: {{value}}",
+    "issueCreatedAtValue": "Issue作成: {{value}}",
+    "approverValue": "承認者: {{id}}",
+    "approverRoleValue": "ロール: {{role}}",
+    "approverFallback": "組織メンバー情報との突合なし",
+    "notAvailable": "利用不可"
+  }
+}
