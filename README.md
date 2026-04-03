@@ -257,11 +257,19 @@ curl -X POST http://localhost:3000/api/auth/register \
 | POST | `/api/goals/:id/recalculate` | 達成率を再計算 |
 | GET/POST | `/api/projects` | プロジェクト管理 |
 | GET/POST | `/api/costs` | コスト記録・集計 |
+| GET/POST | `/api/costs/budget` | 予算ポリシー一覧・作成 |
 | GET/POST | `/api/plugins` | プラグイン管理 |
 | GET/POST | `/api/plugins/:id/webhooks` | Webhook設定 |
 | GET | `/api/activity` | 全操作ログ取得 |
 | GET/PATCH | `/api/settings` | 組織設定（エージェント実行モード・APIキー） |
 | GET/PATCH | `/api/org` | 組織情報の取得・更新 |
+
+#### `POST /api/costs/budget` の入力ルール
+
+- `limit_amount_usd`: 必須。`0` より大きい数値
+- `period`: 任意。未指定時は `monthly`
+- `alert_threshold`: 任意。`0.00` から `1.00` の比率、または `0` から `100` の百分率で指定可能
+- API は `alert_threshold: 80` を受け取った場合、保存時には `0.80` として正規化します
 
 #### エージェント登録時の `type` フィールド
 
@@ -553,11 +561,19 @@ All authenticated requests require: `Authorization: Bearer <api_key>`
 | POST | `/api/goals/:id/recalculate` | Recalculate goal progress from tasks |
 | GET/POST | `/api/projects` | List / manage projects |
 | GET/POST | `/api/costs` | List / record costs |
+| GET/POST | `/api/costs/budget` | List / create budget policies |
 | GET/POST | `/api/plugins` | List / create plugins |
 | GET/POST | `/api/plugins/:id/webhooks` | Configure webhooks |
 | GET | `/api/activity` | Retrieve full activity log |
 | GET/PATCH | `/api/settings` | Organization settings (agent mode, API key) |
 | GET/PATCH | `/api/org` | Organization info (name, description) |
+
+#### `POST /api/costs/budget` Input Rules
+
+- `limit_amount_usd`: Required. Must be a number greater than `0`
+- `period`: Optional. Defaults to `monthly`
+- `alert_threshold`: Optional. Accepts either a ratio from `0.00` to `1.00` or a percentage from `0` to `100`
+- When the API receives `alert_threshold: 80`, it normalizes and stores the value as `0.80`
 
 #### Agent `type` Values
 
