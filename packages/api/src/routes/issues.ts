@@ -3,6 +3,8 @@ import { getDb, issues, issue_comments, issue_goals, agents, goals } from '@comp
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { sanitizeString, sanitizePagination } from '../middleware/validate';
 
+const VALID_ISSUE_STATUSES = ['backlog', 'todo', 'in_progress', 'in_review', 'done', 'cancelled'] as const;
+
 export const issuesRouter: RouterType = Router();
 
 async function findOwnedIssue(db: ReturnType<typeof getDb>, companyId: string, issueId: string) {
@@ -67,6 +69,17 @@ issuesRouter.post('/', async (req, res, next) => {
       });
       return;
     }
+
+    // status/priority の検証
+    if (status && !VALID_ISSUE_STATUSES.includes(status as typeof VALID_ISSUE_STATUSES[number])) {
+      res.status(400).json({ error: 'validation_failed', message: `status が無効です。有効な値: ${VALID_ISSUE_STATUSES.join(', ')}` });
+      return;
+    }
+    if (priority !== undefined && (!Number.isInteger(priority) || priority < 0 || priority > 5)) {
+      res.status(400).json({ error: 'validation_failed', message: 'priority は 0〜5 の整数です' });
+      return;
+    }
+
     // XSS対策: HTMLタグを除去
     const sanitizedTitle = sanitizeString(title);
     const sanitizedDescription = description ? sanitizeString(description) : description;
@@ -163,6 +176,17 @@ issuesRouter.patch('/:issueId', async (req, res, next) => {
       priority?: number;
       assigned_to?: string;
     };
+
+    // status/priority の検証
+    if (status && !VALID_ISSUE_STATUSES.includes(status as typeof VALID_ISSUE_STATUSES[number])) {
+      res.status(400).json({ error: 'validation_failed', message: `status が無効です。有効な値: ${VALID_ISSUE_STATUSES.join(', ')}` });
+      return;
+    }
+    if (priority !== undefined && (!Number.isInteger(priority) || priority < 0 || priority > 5)) {
+      res.status(400).json({ error: 'validation_failed', message: 'priority は 0〜5 の整数です' });
+      return;
+    }
+
     const db = getDb();
     if (assigned_to !== undefined && assigned_to !== null && assigned_to !== '' && !(await findOwnedAgent(db, req.companyId!, assigned_to))) {
       res.status(400).json({

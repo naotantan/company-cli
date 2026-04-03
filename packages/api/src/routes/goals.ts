@@ -86,8 +86,8 @@ goalsRouter.patch('/:goalId', async (req, res, next) => {
     const updated = await db
       .update(goals)
       .set({
-        ...(name && { name }),
-        ...(description !== undefined && { description }),
+        ...(name && { name: sanitizeString(name) }),
+        ...(description !== undefined && { description: description ? sanitizeString(description) : description }),
         ...(status && { status }),
         ...(deadline && { deadline: new Date(deadline) }),
         updated_at: new Date(),

@@ -120,6 +120,9 @@ function extractMappedV4(ip: string): string | null {
   return null;
 }
 
+// webhook events の有効な値
+const VALID_WEBHOOK_EVENTS = ['push', 'issue.created', 'issue.updated', 'issue.closed', 'agent.started', 'agent.completed', 'agent.failed'] as const;
+
 export const pluginsRouter: RouterType = Router();
 
 // --- Plugin CRUD ---
@@ -151,6 +154,18 @@ pluginsRouter.post('/', async (req, res, next) => {
       });
       return;
     }
+
+    // repository_url — URL 形式チェック（存在する場合のみ）
+    if (repository_url !== undefined && repository_url !== null) {
+      try {
+        const parsed = new URL(repository_url);
+        if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error();
+      } catch {
+        res.status(400).json({ error: 'validation_failed', message: 'repository_url は http または https で始まる URL を指定してください' });
+        return;
+      }
+    }
+
     const db = getDb();
     const newPlugin = await db
       .insert(plugins)
@@ -199,6 +214,18 @@ pluginsRouter.patch('/:pluginId', async (req, res, next) => {
       repository_url?: string;
       is_active?: boolean;
     };
+
+    // repository_url — URL 形式チェック（存在する場合のみ）
+    if (repository_url !== undefined && repository_url !== null) {
+      try {
+        const parsed = new URL(repository_url);
+        if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error();
+      } catch {
+        res.status(400).json({ error: 'validation_failed', message: 'repository_url は http または https で始まる URL を指定してください' });
+        return;
+      }
+    }
+
     const db = getDb();
     const existing = await db.select({ id: plugins.id })
       .from(plugins)
@@ -364,6 +391,17 @@ pluginsRouter.post('/:pluginId/webhooks', async (req, res, next) => {
     const urlCheck = await validateWebhookUrl(url);
     if (!urlCheck.valid) {
       res.status(400).json({ error: 'validation_failed', message: urlCheck.reason || 'url が無効です' });
+      return;
+    }
+
+    // events の内容を検証
+    if (events.length > 20) {
+      res.status(400).json({ error: 'validation_failed', message: 'events は最大20件です' });
+      return;
+    }
+    const invalidEvents = events.filter(e => !VALID_WEBHOOK_EVENTS.includes(e as typeof VALID_WEBHOOK_EVENTS[number]));
+    if (invalidEvents.length > 0) {
+      res.status(400).json({ error: 'validation_failed', message: `無効な event: ${invalidEvents.join(', ')}。有効な値: ${VALID_WEBHOOK_EVENTS.join(', ')}` });
       return;
     }
     const db = getDb();

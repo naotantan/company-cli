@@ -31,6 +31,14 @@ function normalizeAlertThreshold(value: unknown): string | null {
 costsRouter.get('/', async (req, res, next) => {
   try {
     const { period = 'month' } = req.query as { period?: string };
+
+    // period enum チェック
+    const VALID_PERIODS = ['day', 'week', 'month', 'year'] as const;
+    if (!VALID_PERIODS.includes(period as typeof VALID_PERIODS[number])) {
+      res.status(400).json({ error: 'validation_failed', message: `period は ${VALID_PERIODS.join(', ')} のいずれかです` });
+      return;
+    }
+
     const db = getDb();
     // 直近30日のコストイベント（company_id でフィルタリング）
     const since = new Date();
@@ -86,12 +94,20 @@ costsRouter.post('/', async (req, res, next) => {
       res.status(404).json({ error: 'not_found', message: 'Agentが見つかりません' });
       return;
     }
+
+    // cost_usd の数値検証
+    const normalizedCostUsd = parseBudgetDecimal(cost_usd, 6); // 6桁精度
+    if (normalizedCostUsd === null) {
+      res.status(400).json({ error: 'validation_failed', message: 'cost_usd が不正な値です' });
+      return;
+    }
+
     const event = await db.insert(cost_events).values({
       agent_id,
       model,
       input_tokens: input_tokens ?? 0,
       output_tokens: output_tokens ?? 0,
-      cost_usd: String(cost_usd),
+      cost_usd: normalizedCostUsd,
     }).returning();
     res.status(201).json({ data: event[0] });
   } catch (err) {

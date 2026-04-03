@@ -3,6 +3,15 @@ import { getDb, routines, routine_runs } from '@company/db';
 import { eq, and, desc } from 'drizzle-orm';
 import { sanitizeString } from '../middleware/validate';
 
+/** cron 式の基本的な妥当性確認（5フィールドまたは6フィールド） */
+function isValidCronExpression(expr: string): boolean {
+  // スペース区切りで5〜6フィールド（秒付きの場合6）
+  const parts = expr.trim().split(/\s+/);
+  if (parts.length < 5 || parts.length > 6) return false;
+  // 各フィールドが cron 許容文字のみで構成されているか
+  return parts.every(p => /^[\d*/,\-?LW#]+$/.test(p));
+}
+
 export const routinesRouter: RouterType = Router();
 
 routinesRouter.get('/', async (req, res, next) => {
@@ -32,6 +41,13 @@ routinesRouter.post('/', async (req, res, next) => {
       });
       return;
     }
+
+    // cron_expression のバリデーション
+    if (!isValidCronExpression(cron_expression)) {
+      res.status(400).json({ error: 'validation_failed', message: 'cron_expression の形式が無効です（例: 0 9 * * 1）' });
+      return;
+    }
+
     const db = getDb();
     const newRoutine = await db
       .insert(routines)

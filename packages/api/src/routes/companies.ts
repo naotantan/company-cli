@@ -3,6 +3,7 @@ import { getDb, companies, company_memberships, board_api_keys } from '@company/
 import { eq } from 'drizzle-orm';
 import { generateApiKey } from '../utils/crypto';
 import { API_KEY_PREFIXES } from '@company/shared';
+import { sanitizeString } from '../middleware/validate';
 
 export const companiesRouter: RouterType = Router();
 
@@ -76,7 +77,8 @@ companiesRouter.post('/:companyId/api-keys', async (req, res, next) => {
 
     const db = getDb();
     const { rawKey, keyHash, prefix } = await generateApiKey(API_KEY_PREFIXES.BOARD);
-    const keyName = req.userId ? `user:${req.userId}:${name}` : name;
+    const sanitizedKeyName = sanitizeString(name);
+    const keyName = req.userId ? `user:${req.userId}:${sanitizedKeyName}` : sanitizedKeyName;
 
     await db.insert(board_api_keys).values({
       company_id: companyId,
