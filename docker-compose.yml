@@ -35,7 +35,7 @@ services:
       PORT: 3000
       API_KEY_SALT: ${API_KEY_SALT:-changeme-salt}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
-      ANTHROPIC_API_KEY: ""
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     ports:
       - "3000:3000"
     volumes:
@@ -47,6 +47,19 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+
+  ui:
+    build:
+      context: .
+      dockerfile: packages/ui/Dockerfile
+    container_name: maestro-ui
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "5173:80"
+    networks:
+      - maestro-network
 
 volumes:
   pgdata:

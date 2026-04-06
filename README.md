@@ -95,63 +95,76 @@ packages/
 
 ---
 
-## クイックスタート
+## インストール
 
-### 前提条件
+### 方法 1：インストールスクリプト（推奨）
 
-- Node.js 20+
-- pnpm 9+
-- Docker & Docker Compose（PostgreSQL 用）
+**前提条件：Docker のみ**
 
-### 1. リポジトリのクローン
+```bash
+curl -fsSL https://raw.githubusercontent.com/naotantan/maestro/main/install.sh | bash
+```
+
+自動で以下を実行します。
+
+1. maestro をクローン（`~/maestro` に配置）
+2. `.env` ファイルを自動生成
+3. `docker compose up --build` で全コンテナを起動
+
+完了後、ブラウザで `http://localhost:5173` を開くだけです。
+
+---
+
+### 方法 2：Docker Compose（手動）
+
+**前提条件：Docker のみ**
 
 ```bash
 git clone https://github.com/naotantan/maestro.git
 cd maestro
+cp .env.example .env          # 必要に応じて編集
+docker compose up -d --build
 ```
 
-### 2. 依存関係のインストール
+| サービス | URL |
+|---|---|
+| ダッシュボード（UI） | http://localhost:5173 |
+| API | http://localhost:3000 |
+
+---
+
+### よく使うコマンド
 
 ```bash
+# 停止
+docker compose down
+
+# 再起動
+docker compose up -d
+
+# ログ確認
+docker compose logs -f
+
+# 更新（最新コードを pull して再ビルド）
+git pull && docker compose up -d --build
+```
+
+---
+
+### ローカル開発環境（Node.js）
+
+Node.js での開発時は以下の手順で起動します。
+
+**前提条件：Node.js 20+・pnpm 9+・Docker**
+
+```bash
+git clone https://github.com/naotantan/maestro.git
+cd maestro
 pnpm install
-```
-
-### 3. 環境変数の設定
-
-```bash
 cp .env.example .env
-# DATABASE_URL などを編集
-```
-
-### 4. データベースの起動
-
-```bash
-pnpm docker:up
-# または: docker compose up -d
-```
-
-### 5. DB マイグレーション
-
-```bash
+docker compose up -d postgres   # DB のみ起動
 pnpm db:migrate
-```
-
-### 6. 起動
-
-```bash
-# API + UI を同時起動
-pnpm dev
-
-# または個別に起動
-pnpm --filter @maestro/api dev    # API: http://localhost:3000
-pnpm --filter @maestro/ui dev     # UI:  http://localhost:5173
-```
-
-### 7. 動作確認
-
-```bash
-curl http://localhost:3000/health
-# → {"status":"ok"}
+pnpm dev                        # API + UI を同時起動
 ```
 
 ---
