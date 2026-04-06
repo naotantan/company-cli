@@ -39,6 +39,39 @@ if ! command -v git &>/dev/null; then
   error "git が見つかりません。git をインストールしてから再実行してください。"
 fi
 
+# ── fswatch インストール ─────────────────────
+if ! command -v fswatch &>/dev/null; then
+  info "fswatch をインストール中..."
+  case "$(uname -s)" in
+    Darwin)
+      if command -v brew &>/dev/null; then
+        brew install fswatch
+      else
+        warn "Homebrew が見つかりません。fswatch のインストールをスキップします。"
+        warn "手動インストール: https://github.com/emcrisostomo/fswatch"
+      fi
+      ;;
+    Linux)
+      if command -v apt-get &>/dev/null; then
+        sudo apt-get install -y fswatch
+      elif command -v yum &>/dev/null; then
+        sudo yum install -y fswatch
+      elif command -v dnf &>/dev/null; then
+        sudo dnf install -y fswatch
+      else
+        warn "パッケージマネージャーが見つかりません。fswatch のインストールをスキップします。"
+        warn "手動インストール: https://github.com/emcrisostomo/fswatch"
+      fi
+      ;;
+    *)
+      warn "未対応の OS です。fswatch を手動でインストールしてください。"
+      ;;
+  esac
+  command -v fswatch &>/dev/null && info "fswatch: OK" || warn "fswatch は maestro-watch.sh を使う場合に必要です"
+else
+  info "fswatch: OK（インストール済み）"
+fi
+
 # ── クローン / 更新 ──────────────────────────
 if [ -d "$INSTALL_DIR/.git" ]; then
   info "既存のインストールを更新中: $INSTALL_DIR"
