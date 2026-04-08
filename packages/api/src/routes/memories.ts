@@ -3,6 +3,16 @@ import { getDb, memories } from '@maestro/db';
 import { eq, and, desc, sql, ilike, or, inArray } from 'drizzle-orm';
 import { sanitizeString, sanitizePagination } from '../middleware/validate';
 
+/** C3: PATCH後にバックグラウンドでembeddingを再生成する */
+async function scheduleMemoryEmbedding(id: string, mem: { title: string; content: string; type?: string | null }): Promise<void> {
+  try {
+    const { embedPassage, buildMemoryEmbedText } = await import('../services/embedding.js');
+    const vec = await embedPassage(buildMemoryEmbedText(mem));
+    const db = getDb();
+    await db.execute(sql`UPDATE memories SET embedding = ${`[${vec.join(',')}]`}::vector WHERE id = ${id}`);
+  } catch { /* embedding失敗は無視 */ }
+}
+
 export const memoriesRouter: RouterType = Router();
 
 // GET /api/memories — 記憶一覧（新しい順、ページネーション付き）
@@ -194,6 +204,11 @@ memoriesRouter.patch('/:id', async (req, res, next) => {
       return;
     }
     res.json({ data: updated });
+
+    // C3: embedding関連フィールドが変わった場合はバックグラウンドで再生成
+    if (title !== undefined || content !== undefined || type !== undefined) {
+      scheduleMemoryEmbedding(updated.id, updated).catch(() => {});
+    }
   } catch (err) {
     next(err);
   }

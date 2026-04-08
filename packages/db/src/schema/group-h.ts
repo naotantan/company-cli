@@ -253,3 +253,18 @@ export const memories = pgTable('memories', {
   idxMemProject: index('idx_memories_project').on(table.company_id, table.project_path),
   idxMemCreated: index('idx_memories_created').on(table.company_id, table.created_at),
 }));
+
+// H15: plugin_chunks — 長文スキルのチャンキング (A2)
+// usage_content が長いスキルを後半キーワードでも検索できるようにする
+export const plugin_chunks = pgTable('plugin_chunks', {
+  id:          uuid('id').primaryKey().defaultRandom(),
+  plugin_id:   uuid('plugin_id').notNull().references(() => plugins.id, { onDelete: 'cascade' }),
+  company_id:  uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
+  chunk_index: integer('chunk_index').notNull(),
+  chunk_text:  text('chunk_text').notNull(),
+  embedding:   vector384('embedding'),
+  created_at:  timestamp('created_at').defaultNow(),
+}, (table) => ({
+  idxPlugin:  index('idx_plugin_chunks_plugin').on(table.plugin_id),
+  idxCompany: index('idx_plugin_chunks_company').on(table.company_id),
+}));

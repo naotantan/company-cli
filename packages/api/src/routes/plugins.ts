@@ -1,5 +1,5 @@
 import { Router, type Router as RouterType } from 'express';
-import { getDb, plugins, plugin_jobs, plugin_job_runs, plugin_webhooks, plugin_usage_events, companies } from '@maestro/db';
+import { getDb, plugins, plugin_jobs, plugin_job_runs, plugin_webhooks, plugin_usage_events, plugin_chunks, companies } from '@maestro/db';
 import { eq, and, sql, gte, desc, inArray } from 'drizzle-orm';
 import { promises as dns } from 'dns';
 import { isIP } from 'net';
@@ -9,14 +9,92 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { sanitizeString } from '../middleware/validate';
 
-/** プラグイン登録・更新後にバックグラウンドでembeddingを生成する */
-async function schedulePluginEmbedding(pluginId: string, plugin: { name: string; description?: string | null; usage_content?: string | null; category?: string | null }): Promise<void> {
+/** プラグイン登録・更新後にバックグラウンドでembeddingを生成する (C3対応済み) */
+async function schedulePluginEmbedding(pluginId: string, plugin: { name: string; description?: string | null; usage_content?: string | null; category?: string | null }, companyId?: string): Promise<void> {
   try {
-    const { embedPassage, buildPluginEmbedText } = await import('../services/embedding.js');
-    const vec = await embedPassage(buildPluginEmbedText(plugin));
+    const { embedPassage, buildPluginEmbedText, buildChunks } = await import('../services/embedding.js');
     const db = getDb();
+
+    // メインembedding更新
+    const vec = await embedPassage(buildPluginEmbedText(plugin));
     await db.execute(sql`UPDATE plugins SET embedding = ${`[${vec.join(',')}]`}::vector WHERE id = ${pluginId}`);
+
+    // A2: usage_content のチャンキング（companyId が渡された場合のみ）
+    if (companyId && plugin.usage_content && plugin.usage_content.length > 400) {
+      const chunks = buildChunks(plugin.usage_content, 400, 50);
+      // 古いチャンクを削除して再挿入
+      await db.execute(sql`DELETE FROM plugin_chunks WHERE plugin_id = ${pluginId}`);
+      for (let i = 0; i < chunks.length; i++) {
+        const chunkVec = await embedPassage(chunks[i]);
+        await db.execute(sql`
+          INSERT INTO plugin_chunks (plugin_id, company_id, chunk_index, chunk_text, embedding)
+          VALUES (${pluginId}, ${companyId}, ${i}, ${chunks[i]}, ${`[${chunkVec.join(',')}]`}::vector)
+        `);
+      }
+    }
   } catch { /* embedding失敗は無視 */ }
+}
+
+// ---- A4: MMR 再ランク ヘルパー ----
+
+function cosineSim(a: number[], b: number[]): number {
+  if (!a.length || !b.length || a.length !== b.length) return 0;
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  const denom = Math.sqrt(na) * Math.sqrt(nb);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+function parseVec(raw: unknown): number[] | null {
+  if (!raw) return null;
+  if (Array.isArray(raw)) return raw as number[];
+  if (typeof raw === 'string') {
+    try { return raw.replace(/^\[|\]$/g, '').split(',').map(Number); } catch { return null; }
+  }
+  return null;
+}
+
+function computeMMR<T extends { score: number; embedding?: unknown }>(
+  candidates: T[],
+  queryVec: number[],
+  lambda: number,
+  k: number,
+): T[] {
+  if (candidates.length === 0) return [];
+  const selected: T[] = [];
+  const remaining = [...candidates];
+
+  while (selected.length < k && remaining.length > 0) {
+    let bestIdx = 0;
+    let bestMmrScore = -Infinity;
+
+    for (let i = 0; i < remaining.length; i++) {
+      const relevance = remaining[i].score;
+      let maxSim = 0;
+      for (const sel of selected) {
+        const vecA = parseVec(remaining[i].embedding);
+        const vecB = parseVec(sel.embedding);
+        if (vecA && vecB) {
+          const s = cosineSim(vecA, vecB);
+          if (s > maxSim) maxSim = s;
+        }
+      }
+      const mmrScore = lambda * relevance - (1 - lambda) * maxSim;
+      if (mmrScore > bestMmrScore) {
+        bestMmrScore = mmrScore;
+        bestIdx = i;
+      }
+    }
+
+    selected.push(remaining[bestIdx]);
+    remaining.splice(bestIdx, 1);
+  }
+
+  return selected;
 }
 
 /**
@@ -671,8 +749,8 @@ pluginsRouter.post('/', async (req, res, next) => {
       }),
     });
 
-    // バックグラウンドでembeddingを生成（レスポンスをブロックしない）
-    schedulePluginEmbedding(newPlugin[0].id, newPlugin[0]);
+    // バックグラウンドでembeddingとchunkを生成（レスポンスをブロックしない）
+    schedulePluginEmbedding(newPlugin[0].id, newPlugin[0], req.companyId!);
   } catch (err) {
     next(err);
   }
@@ -710,7 +788,19 @@ pluginsRouter.post('/:id/generate-pitch', async (req, res, next) => {
   }
 });
 
-// GET /api/plugins/recommend?q=text&limit=5&min_similarity=0.5 — セマンティック検索でスキルを推薦
+/**
+ * GET /api/plugins/recommend
+ *   ?q=text              — 検索クエリ（必須）
+ *   &limit=5             — 返す件数（最大20）
+ *   &min_similarity=0.5  — 最低類似度閾値
+ *   &usage_weight=0.3    — A3: 使用回数スコアの重み（0〜1）
+ *   &hybrid=false        — A1: true でベクトル+全文ハイブリッド検索
+ *   &vector_weight=0.7   — A1: ハイブリッド時のベクトルスコア重み
+ *   &mmr=false           — A4: true でMMR多様化再ランク
+ *   &lambda=0.5          — A4: MMR の多様性バランス（0=最大多様, 1=純類似度）
+ *   &expand=false        — D1: true でOllamaによるクエリ拡張
+ *   &personalize=false   — D2: true で使用履歴によるカテゴリブースト
+ */
 pluginsRouter.get('/recommend', async (req, res, next) => {
   try {
     const q = String(req.query.q ?? '').trim();
@@ -718,27 +808,181 @@ pluginsRouter.get('/recommend', async (req, res, next) => {
       res.status(400).json({ error: 'クエリが必要です' });
       return;
     }
-    const limit = Math.min(Number(req.query.limit ?? 5), 20);
+    const limit      = Math.min(Number(req.query.limit ?? 5), 20);
     const minSimilarity = Math.max(0, Math.min(1, Number(req.query.min_similarity ?? 0.5)));
+    const usageWeight   = Math.max(0, Math.min(1, Number(req.query.usage_weight ?? 0.3)));   // A3
+    const hybrid        = req.query.hybrid === 'true';                                         // A1
+    const vectorWeight  = Math.max(0, Math.min(1, Number(req.query.vector_weight ?? 0.7)));   // A1
+    const textWeight    = 1 - vectorWeight;
+    const mmr           = req.query.mmr === 'true';                                            // A4
+    const mmrLambda     = Math.max(0, Math.min(1, Number(req.query.lambda ?? 0.5)));          // A4
+    const expand        = req.query.expand === 'true';                                         // D1
+    const personalize   = req.query.personalize === 'true';                                    // D2
+    const cid = req.companyId!;
+
     const { embedQuery } = await import('../services/embedding.js');
-    const vec = await embedQuery(q);
+
+    // D1: クエリ拡張（Ollama）
+    let queryText = q;
+    if (expand) {
+      try {
+        const { expandQuery } = await import('../services/ollama.js');
+        queryText = await expandQuery(q);
+      } catch { /* Ollama 利用不可時はフォールバック */ }
+    }
+
+    const vec = await embedQuery(queryText);
     const vecStr = `[${vec.join(',')}]`;
     const db = getDb();
-    // コサイン類似度で上位N件を取得（pgvector: 1 - cosine_distance）
-    const rows = await db.execute(sql`
-      SELECT
-        id, name, description, description_translated, category,
-        trigger_type, usage_count, last_used_at, enabled,
-        1 - (embedding <=> ${vecStr}::vector) AS similarity
+
+    // MMR 有効時はより多くの候補を取得
+    const fetchLimit = mmr ? Math.min(limit * 4, 40) : limit;
+
+    // A1: ハイブリッド検索 or 純粋ベクトル検索
+    const directResult = await db.execute(hybrid ? sql`
+      SELECT id, name, description, description_translated, category,
+             trigger_type, usage_count, last_used_at, enabled, embedding,
+             (${vectorWeight} * (1 - (embedding <=> ${vecStr}::vector)) +
+              ${textWeight} * COALESCE(ts_rank(search_vector, plainto_tsquery('simple', ${q})), 0)
+             ) AS similarity
       FROM plugins
-      WHERE company_id = ${req.companyId!}
+      WHERE company_id = ${cid}
+        AND enabled = true
+        AND embedding IS NOT NULL
+        AND 1 - (embedding <=> ${vecStr}::vector) >= ${minSimilarity}
+      ORDER BY similarity DESC
+      LIMIT ${fetchLimit}
+    ` : sql`
+      SELECT id, name, description, description_translated, category,
+             trigger_type, usage_count, last_used_at, enabled, embedding,
+             1 - (embedding <=> ${vecStr}::vector) AS similarity
+      FROM plugins
+      WHERE company_id = ${cid}
         AND enabled = true
         AND embedding IS NOT NULL
         AND 1 - (embedding <=> ${vecStr}::vector) >= ${minSimilarity}
       ORDER BY embedding <=> ${vecStr}::vector
-      LIMIT ${limit}
+      LIMIT ${fetchLimit}
     `);
-    res.json({ data: rows.rows, meta: { min_similarity: minSimilarity } });
+
+    type PluginRow = {
+      id: string;
+      name: string;
+      description: string | null;
+      description_translated: string | null;
+      category: string | null;
+      trigger_type: string | null;
+      usage_count: number;
+      last_used_at: string | null;
+      enabled: boolean;
+      similarity: number;
+      embedding?: unknown;
+      score: number;
+    };
+
+    const rowMap = new Map<string, PluginRow>();
+    for (const r of directResult.rows as PluginRow[]) {
+      rowMap.set(r.id, { ...r, score: Number(r.similarity) });
+    }
+
+    // A2: plugin_chunks でも検索し、直接ヒットしないプラグインを拾う
+    try {
+      const chunkResult = await db.execute(sql`
+        SELECT c.plugin_id,
+               MAX(1 - (c.embedding <=> ${vecStr}::vector)) AS chunk_sim
+        FROM plugin_chunks c
+        WHERE c.company_id = ${cid}
+          AND c.embedding IS NOT NULL
+          AND 1 - (c.embedding <=> ${vecStr}::vector) >= ${minSimilarity}
+        GROUP BY c.plugin_id
+        ORDER BY chunk_sim DESC
+        LIMIT ${fetchLimit}
+      `);
+
+      const chunkHits = chunkResult.rows as { plugin_id: string; chunk_sim: number }[];
+
+      // チャンクで発見したプラグインのうち直接ヒットしていないものを追加取得
+      const missingIds = chunkHits
+        .filter(h => !rowMap.has(h.plugin_id))
+        .map(h => h.plugin_id);
+
+      if (missingIds.length > 0) {
+        const extraResult = await db.execute(sql`
+          SELECT id, name, description, description_translated, category,
+                 trigger_type, usage_count, last_used_at, enabled, embedding,
+                 0::float AS similarity
+          FROM plugins
+          WHERE company_id = ${cid}
+            AND enabled = true
+            AND id = ANY(${missingIds}::uuid[])
+        `);
+        for (const r of extraResult.rows as PluginRow[]) {
+          rowMap.set(r.id, { ...r, score: 0 });
+        }
+      }
+
+      // チャンクスコアで similarity をブースト
+      for (const hit of chunkHits) {
+        const row = rowMap.get(hit.plugin_id);
+        if (row && hit.chunk_sim > row.similarity) {
+          row.similarity = hit.chunk_sim;
+          row.score = hit.chunk_sim;
+        }
+      }
+    } catch { /* plugin_chunks テーブルが未存在の場合など無視 */ }
+
+    // A3: 複合スコアリング（similarity × (1-usageWeight) + log_usage × usageWeight）
+    const rows = Array.from(rowMap.values());
+    const maxUsage = rows.reduce((m, r) => Math.max(m, r.usage_count ?? 0), 1);
+    for (const r of rows) {
+      const usageScore = maxUsage > 0
+        ? Math.log((r.usage_count ?? 0) + 1) / Math.log(maxUsage + 1)
+        : 0;
+      r.score = r.similarity * (1 - usageWeight) + usageScore * usageWeight;
+    }
+
+    // D2: パーソナライズ（直近30日の使用カテゴリにスコアブースト）
+    if (personalize) {
+      try {
+        const since30d = new Date();
+        since30d.setDate(since30d.getDate() - 30);
+        const usageRows = await db.execute(sql`
+          SELECT p.category, COUNT(e.id)::int AS cnt
+          FROM plugin_usage_events e
+          JOIN plugins p ON p.id = e.plugin_id
+          WHERE e.company_id = ${cid}
+            AND e.used_at >= ${since30d}
+            AND p.category IS NOT NULL
+          GROUP BY p.category
+          ORDER BY cnt DESC
+          LIMIT 5
+        `);
+        const topCategories = new Set(
+          (usageRows.rows as { category: string }[]).map(r => r.category)
+        );
+        for (const r of rows) {
+          if (r.category && topCategories.has(r.category)) {
+            r.score += 0.1;
+          }
+        }
+      } catch { /* パーソナライズ失敗は無視 */ }
+    }
+
+    // スコア降順ソート
+    rows.sort((a, b) => b.score - a.score);
+
+    // A4: MMR 再ランク
+    const ranked = mmr && rows.length > 1
+      ? computeMMR(rows, vec, mmrLambda, limit)
+      : rows.slice(0, limit);
+
+    // embedding フィールドを除去してレスポンス
+    const output = ranked.map(({ embedding: _e, score: _s, ...rest }) => rest);
+
+    res.json({
+      data: output,
+      meta: { min_similarity: minSimilarity, hybrid, personalize, mmr, expand },
+    });
   } catch (err) {
     next(err);
   }
@@ -1244,11 +1488,12 @@ pluginsRouter.post('/generate-embeddings', async (req, res, next) => {
 
     res.json({ data: { scheduled: targets.length } });
 
-    // バックグラウンドでembedding生成
+    // バックグラウンドでembedding生成（chunking含む）
+    const companyIdForEmbed = req.companyId!;
     (async () => {
       for (const p of targets) {
         try {
-          await schedulePluginEmbedding(p.id, p);
+          await schedulePluginEmbedding(p.id, p, companyIdForEmbed);
         } catch { /* 1件失敗しても継続 */ }
       }
     })().catch(() => {});
@@ -2064,9 +2309,9 @@ pluginsRouter.patch('/:pluginId', async (req, res, next) => {
       .returning();
     res.json({ data: updated[0] });
 
-    // name/description/usage_content が変わった場合はembeddingを再生成
+    // name/description/usage_content が変わった場合はembedding（chunk含む）を再生成
     if (updates.name !== undefined || updates.description !== undefined) {
-      schedulePluginEmbedding(updated[0].id, updated[0]);
+      schedulePluginEmbedding(updated[0].id, updated[0], req.companyId!);
     }
   } catch (err) {
     next(err);

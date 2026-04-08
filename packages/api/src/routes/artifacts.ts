@@ -3,6 +3,16 @@ import { getDb, artifacts } from '@maestro/db';
 import { eq, and, desc, ilike, or, sql } from 'drizzle-orm';
 import { sanitizeString, sanitizePagination } from '../middleware/validate';
 
+/** C3: PATCH後にバックグラウンドでembeddingを再生成する */
+async function scheduleArtifactEmbedding(id: string, art: { title: string; description?: string | null; content?: string | null; artifact_type?: string | null }): Promise<void> {
+  try {
+    const { embedPassage, buildArtifactEmbedText } = await import('../services/embedding.js');
+    const vec = await embedPassage(buildArtifactEmbedText(art));
+    const db = getDb();
+    await db.execute(sql`UPDATE artifacts SET embedding = ${`[${vec.join(',')}]`}::vector WHERE id = ${id}`);
+  } catch { /* embedding失敗は無視 */ }
+}
+
 export const artifactsRouter: RouterType = Router();
 
 // GET /api/artifacts — 成果物一覧
@@ -163,6 +173,16 @@ artifactsRouter.patch('/:id', async (req, res, next) => {
       return;
     }
     res.json({ data: updated });
+
+    // C3: embedding関連フィールドが変わった場合はバックグラウンドで再生成
+    if (title !== undefined || description !== undefined || content !== undefined) {
+      scheduleArtifactEmbedding(updated.id, {
+        title: updated.title,
+        description: updated.description,
+        content: updated.content,
+        artifact_type: updated.type,
+      }).catch(() => {});
+    }
   } catch (err) {
     next(err);
   }

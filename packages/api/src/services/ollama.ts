@@ -327,3 +327,31 @@ export async function isOllamaAvailable(): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * D1: クエリ拡張 — 元のクエリに同義語・関連語を付加してembeddingの再現率を高める
+ * Ollamaが使えない場合・タイムアウトの場合は元のクエリをそのまま返す
+ * @param q - 元の検索クエリ
+ * @param timeoutMs - タイムアウト（ミリ秒、デフォルト5秒）
+ */
+export async function expandQuery(q: string, timeoutMs = 5000): Promise<string> {
+  try {
+    const prompt = `次の検索クエリの同義語や関連語を5つ以内で列挙してください。
+クエリ: "${q}"
+出力形式: カンマ区切りのキーワードのみ（説明不要）
+例: テスト, テストコード, ユニットテスト, QA, 品質保証`;
+
+    const expanded = await Promise.race([
+      generate(prompt, timeoutMs),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('timeout')), timeoutMs)
+      ),
+    ]);
+
+    if (!expanded || expanded.length === 0) return q;
+    // 元クエリ + 拡張語を結合（最大200文字）
+    return `${q} ${expanded}`.slice(0, 200);
+  } catch {
+    return q; // フォールバック: 元クエリのみ
+  }
+}

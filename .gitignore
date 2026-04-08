@@ -7,7 +7,7 @@ dist/
 pgdata/
 *.log
 .DS_Store
-drizzle/
+drizzle/meta/
 *.tsbuildinfo
 coverage/
 .vite/
@@ -34,3 +34,4 @@ packages/ui/playwright-report/
 e2e/test-results/
 e2e/playwright-report/
 packages/ui/tests/e2e/test-results/
+e2e/screenshots/

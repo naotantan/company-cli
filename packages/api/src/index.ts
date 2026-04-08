@@ -6,6 +6,7 @@ import { startHeartbeatEngine, stopHeartbeatEngine } from './engine/heartbeat-en
 import { startCrashRecovery, stopCrashRecovery } from './engine/crash-recovery';
 import { startBudgetMonitor, stopBudgetMonitor } from './engine/budget-monitor';
 import { startTranslationResume, stopTranslationResume } from './engine/translation-resume';
+import { warmupEmbedding } from './services/embedding.js';
 
 const repoRoot = path.resolve(__dirname, '../../../');
 dotenv.config({ path: path.join(repoRoot, '.env') });
@@ -17,6 +18,9 @@ const ENABLE_ENGINE = process.env.ENABLE_ENGINE === 'true' || process.env.NODE_E
 
 async function main() {
   const app = createApp();
+
+  // B1: サーバー起動前にembeddingモデルをウォームアップ（初回クエリを高速化）
+  warmupEmbedding().catch((err) => console.warn('[embedding] ウォームアップ失敗（続行）:', err));
 
   const server = app.listen(PORT, () => {
     console.log(`🚀 API サーバー起動: http://localhost:${PORT}`);
