@@ -20,7 +20,7 @@ What it does is simple: it automates the **start, monitor, stop, and cost manage
 | API bills balloon unexpectedly | Set a monthly budget cap; skills auto-stop the moment it's exceeded |
 | No visibility into who ran what | All operations are logged with timestamps (audit-ready) |
 | Task assignment is manual | Register a task and it's automatically assigned to an available skill |
-| Can't fully delegate critical actions to AI | Set a "human approval required" gate for sensitive operations |
+| Session work gets lost | Auto-save session summaries via Stop hook |
 | Want to integrate with Slack or GitHub | Configure with Webhooks — no code needed |
 
 ---
@@ -57,7 +57,7 @@ maestro/
 │   │       │   ├── heartbeat-engine.ts   … health check every 30s
 │   │       │   ├── crash-recovery.ts     … detect crash → auto-restart
 │   │       │   └── budget-monitor.ts     … budget exceeded → auto-stop
-│   │       ├── routes/                   … 16 REST endpoints
+│   │       ├── routes/                   … REST endpoints
 │   │       ├── middleware/               … auth & request logging
 │   │       └── server.ts                 … Express app init
 │   ├── cli/          ← CLI tool (17 commands)
@@ -69,6 +69,18 @@ maestro/
 ├── docker-compose.yml
 └── package.json
 ```
+
+---
+
+## Dashboard (Mission Control)
+
+The dashboard gives you a real-time view of your AI operations:
+
+- **Metrics chips** — sessions, active jobs, and monthly cost at a glance
+- **Session feed** — latest sessions in real time
+- **Job panel** — status of running and completed jobs
+- **Skill usage chart** — usage frequency by skill
+- **Cost summary** — cost trends over time
 
 ---
 
@@ -95,8 +107,6 @@ The heartbeat engine also handles passing work to the next skill when a task com
 - **1-to-1 handoff**: Skill A finishes → passes output to Skill B to continue
 - **Chain (A→B→C)**: Connect multiple skills in sequence to run as a pipeline
 
-See `docs/handoff/` and `docs/chain/` for design specs.
-
 ### 2. Crash Recovery Engine (crash-recovery.ts)
 
 **What it does:** Every 60 seconds, finds crashed skills and automatically recovers them.
@@ -120,149 +130,206 @@ See `docs/handoff/` and `docs/chain/` for design specs.
 
 ---
 
-## CLI commands
+## Key Features
 
-17 commands are implemented in `packages/cli/src/commands/` (`backup` has two subcommands: `create` and `list`).
+### Skill Management
+- **One-click install** from GitHub repositories
+- **Auto-sync** with everything-claude-code and other major skill sets
+- Usage examples auto-extracted from `SKILL.md` and shown in the dashboard
+- Category classification, favorites, **usage count & last-used date tracking**
+- Enable / disable / uninstall
 
-| Command | What it does |
-|---|---|
-| `init` | Initial project setup |
-| `login` | Log in to the API server |
-| `register` | Register a new user |
-| `org` | Manage your organization (tenant) |
-| `project` | Create and list projects |
-| `agent` | Add, list, enable, and disable skills |
-| `goal` | Set goals and track progress |
-| `issue` | Create and manage issues |
-| `routine` | Schedule recurring tasks |
-| `approval` | Review, approve, and reject pending tasks |
-| `costs` | View cost history |
-| `plugin` | Add and manage plugins |
-| `backup create` | Create a SQL dump (`--output <path>` to specify destination) |
-| `backup list` | List existing backups |
-| `doctor` | Check environment health |
-| `update` | Update maestro itself |
-| `uninstall` | Uninstall maestro |
-| `ui` | Launch the Web dashboard |
+### Session & Memory
+- **Auto-save** Claude Code session work logs (via Stop hook)
+- **Long-term memory store** across sessions (MCP memory package)
+- Structured session summary storage (headline / tasks / decisions / changed files)
+
+### Security & Multi-tenancy
+- Complete data isolation by **company_id**
+- Bearer token authentication (3 key types: user / board / company)
+- SSRF protection on Webhook URLs (DNS resolution + private IP block)
+- AES-256-GCM encryption for stored credentials
+- `X-Request-ID` on all requests, rate limiting, Helmet.js CSP
+
+### Other
+- **Artifacts management** — report / image / document / code, etc.
+- **Playbooks & recipes** — standardize repetitive tasks
+- **Notification system** — activity-based alerts
+- **Full-text search** API
+- **Webhooks** — send events to external services
+- **i18n** — Japanese, English, Chinese
+
+> **Project & Issue management via Plane**
+> maestro focuses on daily AI agent operations. For development tasks and issue tracking, we recommend integrating with external tools like [Plane](https://plane.so).
 
 ---
 
 ## API endpoints
 
-The REST API covers 16 resources (Bearer token authentication).
+The REST API uses Bearer token authentication.
 
 | Endpoint | Role |
 |---|---|
 | `/health` | Health check (no auth required) |
-| `/auth` | Login & token issuance |
-| `/org` | Organization management |
-| `/companies` | Tenant management |
-| `/agents` | Skill CRUD |
-| `/tasks` | Task creation & assignment |
-| `/issues` | Issue management |
-| `/goals` | Goal management |
-| `/projects` | Project management |
-| `/costs` | Cost data |
-| `/routines` | Recurring task management |
-| `/approvals` | Approval workflow |
-| `/activity` | Operation log |
-| `/plugins` | Plugin management |
-| `/settings` | Tenant settings |
-| `/handoffs` | Skill-to-agent handoffs |
+| `/api/auth` | Login & token issuance |
+| `/api/agents` | Skill CRUD |
+| `/api/plugins` | Plugin / skill management |
+| `/api/plugins/track-usage` | Record skill usage |
+| `/api/session-summaries` | Session records |
+| `/api/memories` | Long-term memory |
+| `/api/artifacts` | Artifact management |
+| `/api/costs` | Cost data |
+| `/api/analytics` | Usage analytics |
+| `/api/routines` | Recurring task management |
+| `/api/settings` | Tenant settings |
+| `/api/webhooks` | Webhook management |
 
 ---
 
 ## Setup (for first-time users)
 
-### Requirements
+### Method 1: Install script (recommended)
 
-| Tool | Version | Purpose |
-|---|---|---|
-| Node.js | 20+ | Run the server and CLI |
-| pnpm | 9+ | Package management (instead of npm) |
-| Docker & Docker Compose | Latest recommended | Run PostgreSQL |
-
-### Steps
+**Requirement: Docker only**
 
 ```bash
-# 1. Clone the repository
+curl -fsSL https://raw.githubusercontent.com/naotantan/maestro/main/install.sh | bash
+```
+
+Automatically:
+
+1. Clones maestro (into `~/maestro`)
+2. Generates a `.env` file
+3. Runs `docker compose up --build`
+
+Then open `http://localhost:5173` in your browser.
+
+---
+
+### Method 2: Docker Compose (manual)
+
+**Requirement: Docker only**
+
+```bash
 git clone https://github.com/naotantan/maestro.git
 cd maestro
+cp .env.example .env          # edit as needed
+docker compose up -d --build
+```
 
-# 2. Install dependencies
-pnpm install
+| Service | URL |
+|---|---|
+| Dashboard (UI) | http://localhost:5173 |
+| API | http://localhost:3000 |
 
-# 3. Prepare environment variables
-cp .env.example .env.development
-# → Open .env.development and edit DATABASE_URL etc.
+---
 
-# 4. Start PostgreSQL via Docker
+### Useful commands
+
+```bash
+# Stop
+docker compose down
+
+# Restart
 docker compose up -d
 
-# 5. Run database migrations
+# View logs
+docker compose logs -f
+
+# Update (pull latest code and rebuild)
+git pull && docker compose up -d --build
+```
+
+---
+
+### Local development (Node.js)
+
+**Requirements: Node.js 20+, pnpm 9+, Docker**
+
+```bash
+git clone https://github.com/naotantan/maestro.git
+cd maestro
+pnpm install
+cp .env.example .env
+docker compose up -d postgres   # start DB only
 pnpm db:migrate
-
-# 6. Start the API server (development mode)
-pnpm --filter @maestro/api dev
-```
-
-### Verify it's working
-
-```bash
-# Health check (returns {"status":"ok"} if healthy)
-curl http://localhost:3000/health
-```
-
-### Start the Web dashboard
-
-```bash
-# Start the UI in a separate terminal
-pnpm --filter @maestro/ui dev
-```
-
-### Start API and UI together
-
-```bash
-# Start both with the root dev script
-pnpm dev
-```
-
-### Docker shortcuts
-
-```bash
-pnpm docker:up    # equivalent to docker compose up -d
-pnpm docker:down  # equivalent to docker compose down
+pnpm dev                        # start API + UI together
 ```
 
 ---
 
-## Internationalization
+## Claude Code integration
 
-The Web dashboard and CLI messages support Japanese, English, and Chinese. Add more languages by editing the JSON files in `packages/i18n/src/locales/`.
+### Stop hook (session recording)
+
+```json
+{
+  "hooks": {
+    "Stop": [{
+      "command": "node ~/.maestro/hooks/session-end.js"
+    }]
+  }
+}
+```
+
+Automatically sends session work to `POST /api/session-summaries` on session end.
+
+### Skill usage tracking (PostToolUse hook)
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [{
+      "matcher": "Skill",
+      "hooks": [{
+        "type": "command",
+        "command": "node ~/.claude/scripts/hooks/track-skill-usage.js"
+      }]
+    }]
+  }
+}
+```
+
+Automatically records usage count and last-used date every time a Skill tool runs.
+
+### MCP memory server
+
+```bash
+claude mcp add maestro-memory --transport http http://localhost:3001/mcp
+```
+
+Read and write long-term memory across Claude Code sessions.
 
 ---
 
-## OpenAPI specification
+## Plane integration
 
-`docs/openapi.yaml` contains the full API specification. Load it into Swagger UI or any compatible tool to explore the API interactively.
+Enter your Plane connection details in the settings screen to link maestro with an external Plane project. This enables a hybrid workflow: daily AI agent logs in maestro + development task management in Plane.
+
+---
+
+## Skill updates
+
+Click **"Update Skills"** in the Web dashboard to:
+
+1. `git pull` the everything-claude-code repository
+2. Sync all skills under `~/.claude/skills/` to the DB
+3. Auto-extract usage examples from each `SKILL.md`
 
 ---
 
 ## Security
-
-Security features confirmed in the source code:
 
 | Measure | Implementation |
 |---|---|
 | HTTP header protection | Helmet.js (including CSP) |
 | Rate limiting | Global: 100 req / 15 min / Auth: 10 req / 15 min |
 | Authentication | Bearer token |
-| Tenant isolation | `company_id` filter applied to every query |
-| Encryption | AES-256-GCM (for stored credentials) |
-| SSRF protection | DNS resolution + private IP range check on Webhook URLs |
+| Tenant isolation | `company_id` filter on every query |
+| Encryption | AES-256-GCM (stored credentials) |
+| SSRF protection | DNS resolution + private IP check on Webhook URLs |
 | SQL injection protection | Parameterized queries via Drizzle ORM |
-| XSS protection | Input sanitization + CSP headers |
-| Request tracing | `X-Request-ID` attached to every request |
+| Request tracing | `X-Request-ID` on every request |
 
 ---
 
@@ -274,7 +341,7 @@ Security features confirmed in the source code:
 | API server | Express.js |
 | Database | PostgreSQL 17 |
 | ORM | Drizzle ORM |
-| Frontend | React + Vite |
+| Frontend | React 18 + Vite + Tailwind CSS |
 | Package manager | pnpm (monorepo) |
 | Testing | Vitest |
 | Container | Docker / Docker Compose |
@@ -284,19 +351,17 @@ Security features confirmed in the source code:
 
 ## Contributing
 
-See `CONTRIBUTING.md` for full details. The short version:
-
 1. Branch off `main` into a feature branch
 2. Implement your changes
 3. Run `pnpm test` to confirm tests pass
 4. Run `pnpm typecheck` to confirm type checks pass
-5. Follow Conventional Commits for commit messages (`feat:`, `fix:`, `docs:`, etc.)
+5. Follow Conventional Commits (`feat:`, `fix:`, `docs:`, etc.)
 6. Open a pull request
 
-Package build order: `shared → db → i18n → adapters → api → cli → ui`. For a full build, `pnpm build` resolves this automatically.
+Package build order: `shared → db → i18n → adapters → api → cli → ui`
 
 ---
 
-## Summary
+## License
 
-maestro is an open-source platform for safely running AI skills like Claude, Gemini, and Codex in production. Built around three core engines — 30-second health checks, automatic crash recovery (up to 3 retries), and auto-stop on monthly budget overrun — it also provides automatic task assignment, human approval gates, agent-to-agent handoff chains, Webhook integration, and full audit logging. Its multi-tenant design supports sharing across multiple companies and teams. Operate via REST API, CLI (17 commands), or Web dashboard.
+MIT License — see [LICENSE](./LICENSE) for details.
