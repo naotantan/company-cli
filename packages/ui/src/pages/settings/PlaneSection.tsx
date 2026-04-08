@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from 'react-query';
 import api from '../../lib/api.ts';
+import { useTranslation } from '@maestro/i18n';
 
 interface PlaneSettings {
   baseUrl: string;
@@ -11,6 +12,7 @@ interface PlaneSettings {
 }
 
 export default function PlaneSection() {
+  const { t } = useTranslation();
   const [baseUrl, setBaseUrl] = useState('http://localhost:8090');
   const [workspaceSlug, setWorkspaceSlug] = useState('');
   const [projectId, setProjectId] = useState('');
@@ -32,12 +34,11 @@ export default function PlaneSection() {
 
   const save = useMutation(
     () => api.patch('/settings/plane', { baseUrl, workspaceSlug, projectId, apiToken }),
-    { onSuccess: () => setTestResult({ ok: true, message: '設定を保存しました' }) },
+    { onSuccess: () => setTestResult({ ok: true, message: t('plane.saveSuccess') }) },
   );
 
   const test = useMutation(
     async () => {
-      // まず保存してからテスト
       await api.patch('/settings/plane', { baseUrl, workspaceSlug, projectId, apiToken });
       return api.get('/jobs/plane/test').then((r) => r.data.data);
     },
@@ -46,11 +47,11 @@ export default function PlaneSection() {
         setTestResult({
           ok: d.connected,
           message: d.connected
-            ? `接続成功！ ${d.states_count} 件のステータスを確認`
-            : `接続失敗: ${d.message}`,
+            ? t('plane.testSuccess', { count: d.states_count })
+            : t('plane.testFail', { message: d.message }),
         });
       },
-      onError: () => setTestResult({ ok: false, message: '接続テストに失敗しました' }),
+      onError: () => setTestResult({ ok: false, message: t('plane.testError') }),
     },
   );
 
@@ -83,9 +84,9 @@ export default function PlaneSection() {
       }}
     >
       <div style={{ marginBottom: 16 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Plane 連携</h2>
+        <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>{t('plane.title')}</h2>
         <p style={{ fontSize: 13, color: 'var(--color-text-3)', marginTop: 4 }}>
-          ジョブを作成すると自動的に Plane Issue として登録されます
+          {t('plane.description')}
         </p>
       </div>
 
@@ -101,7 +102,7 @@ export default function PlaneSection() {
           />
         </div>
         <div>
-          <label style={labelStyle}>ワークスペース slug</label>
+          <label style={labelStyle}>{t('plane.workspaceSlug')}</label>
           <input
             type="text"
             value={workspaceSlug}
@@ -109,12 +110,15 @@ export default function PlaneSection() {
             placeholder="my-workspace"
             style={inputStyle}
           />
-          <p style={{ fontSize: 12, color: 'var(--color-text-4)', marginTop: 4 }}>
-            Plane の URL に含まれるワークスペース名（例: {baseUrl || 'http://localhost:8090'}/<strong>my-workspace</strong>/...）
-          </p>
+          <p
+            style={{ fontSize: 12, color: 'var(--color-text-4)', marginTop: 4 }}
+            dangerouslySetInnerHTML={{
+              __html: t('plane.workspaceSlugHint', { url: baseUrl || 'http://localhost:8090' }),
+            }}
+          />
         </div>
         <div>
-          <label style={labelStyle}>プロジェクト ID</label>
+          <label style={labelStyle}>{t('plane.projectId')}</label>
           <input
             type="text"
             value={projectId}
@@ -123,20 +127,20 @@ export default function PlaneSection() {
             style={inputStyle}
           />
           <p style={{ fontSize: 12, color: 'var(--color-text-4)', marginTop: 4 }}>
-            Plane プロジェクト設定 → 「一般」に表示される UUID
+            {t('plane.projectIdHint')}
           </p>
         </div>
         <div>
-          <label style={labelStyle}>API トークン</label>
+          <label style={labelStyle}>{t('plane.apiToken')}</label>
           <input
             type="password"
             value={apiToken}
             onChange={(e) => setApiToken(e.target.value)}
-            placeholder={data?.hasApiToken ? '（設定済み・変更する場合のみ入力）' : 'your-api-token'}
+            placeholder={data?.hasApiToken ? t('plane.apiTokenMasked') : 'your-api-token'}
             style={inputStyle}
           />
           <p style={{ fontSize: 12, color: 'var(--color-text-4)', marginTop: 4 }}>
-            Plane → プロフィール → API トークン で発行
+            {t('plane.apiTokenHint')}
           </p>
         </div>
 
@@ -170,7 +174,7 @@ export default function PlaneSection() {
               opacity: test.isLoading || !workspaceSlug || !projectId ? 0.5 : 1,
             }}
           >
-            {test.isLoading ? 'テスト中...' : '接続テスト'}
+            {test.isLoading ? t('plane.testing') : t('plane.testButton')}
           </button>
           <button
             onClick={() => save.mutate()}
@@ -187,7 +191,7 @@ export default function PlaneSection() {
               opacity: save.isLoading ? 0.6 : 1,
             }}
           >
-            {save.isLoading ? '保存中...' : '保存'}
+            {save.isLoading ? t('common.saving') : t('common.save')}
           </button>
         </div>
       </div>

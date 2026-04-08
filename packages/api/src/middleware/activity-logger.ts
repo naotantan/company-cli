@@ -7,13 +7,10 @@ function extractEntityType(path: string): string | null {
   const segments = path.replace(/^\//, '').split('/');
   const entityMap: Record<string, string> = {
     agents: 'agent',
-    issues: 'issue',
     goals: 'goal',
-    projects: 'project',
     costs: 'cost',
     routines: 'routine',
     plugins: 'plugin',
-    approvals: 'approval',
   };
   return entityMap[segments[0]] ?? null;
 }

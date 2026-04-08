@@ -1,5 +1,5 @@
 import { Router, type Router as RouterType } from 'express';
-import { getDb, session_summaries, issues, plugins, activity_log } from '@maestro/db';
+import { getDb, session_summaries, plugins, activity_log } from '@maestro/db';
 import { eq, and, desc, inArray, sql } from 'drizzle-orm';
 import { sanitizeString, sanitizePagination } from '../middleware/validate';
 
@@ -85,6 +85,36 @@ async function detectAndUpdateSkillUsage(
     console.error('[SessionSummaries] スキル使用検出エラー:', skillErr);
   }
 }
+
+// GET /api/session-summaries/search?q=<query>&limit=<n> — ベクトル意味検索
+sessionSummariesRouter.get('/search', async (req, res, next) => {
+  try {
+    const q = String(req.query.q ?? '').trim();
+    if (!q) {
+      res.status(400).json({ error: 'validation_failed', message: 'q は必須です' });
+      return;
+    }
+    const limit = Math.min(Number(req.query.limit ?? 10), 30);
+    const { embedQuery } = await import('../services/embedding.js');
+    const vec = await embedQuery(q);
+    const db = getDb();
+    const rows = await db.execute(sql`
+      SELECT
+        id, session_id, agent_id, headline, tasks, decisions,
+        changed_files, related_issue_ids,
+        session_started_at, session_ended_at, created_at,
+        1 - (embedding <=> ${`[${vec.join(',')}]`}::vector) AS similarity
+      FROM session_summaries
+      WHERE company_id = ${req.companyId!}
+        AND embedding IS NOT NULL
+      ORDER BY embedding <=> ${`[${vec.join(',')}]`}::vector
+      LIMIT ${limit}
+    `);
+    res.json({ data: rows.rows, meta: { q, limit } });
+  } catch (err) {
+    next(err);
+  }
+});
 
 // GET /api/session-summaries — 作業記録一覧（新しい順）
 sessionSummariesRouter.get('/', async (req, res, next) => {
@@ -185,16 +215,16 @@ sessionSummariesRouter.post('/', async (req, res, next) => {
           entity_id: existing[0].id,
           action: 'update',
           changes: { session_id, headline: headline ?? null },
-        }).catch(() => {});
+        }).catch((err: unknown) => { console.error('[session-summaries] background task failed:', err); });
 
         // スキル使用検出（UPSERTパスでも必ず実行）
         detectAndUpdateSkillUsage(req.companyId!, [
           summary,
-          agent_id,
+          // agent_id (UUID) はスキル名マッチングに不要なため除外
           ...(Array.isArray(tasks) ? tasks : []),
           ...(Array.isArray(decisions) ? decisions : []),
           ...(Array.isArray(changed_files) ? changed_files : []),
-        ], used_skill_names).catch(() => {});
+        ], used_skill_names).catch((err: unknown) => { console.error('[session-summaries] background task failed:', err); });
 
         res.status(200).json({ data: updated[0], updated: true });
         return;
@@ -222,35 +252,7 @@ sessionSummariesRouter.post('/', async (req, res, next) => {
       entity_id: inserted[0].id,
       action: 'create',
       changes: { session_id: session_id ?? null, headline: headline ?? null },
-    }).catch(() => {});
-
-    // 関連Issue IDが提供されている場合、それらを'done'ステータスに自動更新
-    if (Array.isArray(related_issue_ids) && related_issue_ids.length > 0) {
-      const resolvedAt = new Date().toISOString().slice(0, 16).replace('T', ' ');
-      const summarySnippet = sanitizeString(summary.trim()).slice(0, 300);
-      const resolutionNote = `\n\n---\n**対応完了** (${resolvedAt})\nセッション作業にて対応。\n概要: ${summarySnippet}`;
-      const issueRows = await db.select({ id: issues.id, description: issues.description })
-        .from(issues).where(
-          and(
-            inArray(issues.id, related_issue_ids),
-            eq(issues.company_id, req.companyId!) // 自社Issueのみ対象
-          )
-        );
-      await db.transaction(async (tx) => {
-        await Promise.all(issueRows.map(issue =>
-          tx.update(issues)
-            .set({
-              status: 'done',
-              description: issue.description?.includes('**対応完了**')
-                ? issue.description
-                : ((issue.description ?? '') + resolutionNote).trim(),
-              updated_at: new Date(),
-            })
-            .where(eq(issues.id, issue.id))
-        ));
-      });
-      console.log(`[SessionSummaries] ${related_issue_ids.length}件のIssueをdoneに更新（対応内容追記済み）`);
-    }
+    }).catch((err: unknown) => { console.error('[session-summaries] background task failed:', err); });
 
     // スキル使用を自動検出してusage_countをインクリメント（ヘルパー関数に委譲）
     detectAndUpdateSkillUsage(req.companyId!, [
@@ -259,7 +261,7 @@ sessionSummariesRouter.post('/', async (req, res, next) => {
       ...(Array.isArray(tasks) ? tasks : []),
       ...(Array.isArray(decisions) ? decisions : []),
       ...(Array.isArray(changed_files) ? changed_files : []),
-    ], used_skill_names).catch(() => {});
+    ], used_skill_names).catch((err: unknown) => { console.error('[session-summaries] background task failed:', err); });
 
     res.status(201).json({ data: inserted[0] });
   } catch (err) {
@@ -324,6 +326,49 @@ sessionSummariesRouter.patch('/:id', async (req, res, next) => {
       return;
     }
     res.json({ data: updated[0] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/session-summaries/:id/generate-summary — Ollama でサマリーを自動生成
+sessionSummariesRouter.post('/:id/generate-summary', async (req, res, next) => {
+  try {
+    const id = sanitizeString(req.params.id);
+    if (!id) {
+      res.status(400).json({ error: 'invalid_id' });
+      return;
+    }
+    const db = getDb();
+
+    const rows = await db
+      .select()
+      .from(session_summaries)
+      .where(and(eq(session_summaries.id, id), eq(session_summaries.company_id, req.companyId!)))
+      .limit(1);
+
+    if (!rows.length) {
+      res.status(404).json({ error: 'not_found', message: 'セッション記録が見つかりません' });
+      return;
+    }
+
+    const record = rows[0];
+    const { generateSessionSummary } = await import('../services/ollama.js');
+
+    const result = await generateSessionSummary({
+      summary: record.summary ?? '',
+      tasks: Array.isArray(record.tasks) ? (record.tasks as string[]) : [],
+      changedFiles: Array.isArray(record.changed_files) ? (record.changed_files as string[]) : [],
+      decisions: Array.isArray(record.decisions) ? (record.decisions as string[]) : [],
+    });
+
+    const [updated] = await db
+      .update(session_summaries)
+      .set({ headline: result.headline })
+      .where(and(eq(session_summaries.id, id), eq(session_summaries.company_id, req.companyId!)))
+      .returning();
+
+    res.json({ data: { ...updated, generatedSummary: result } });
   } catch (err) {
     next(err);
   }

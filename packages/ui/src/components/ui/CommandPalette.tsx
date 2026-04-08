@@ -1,37 +1,33 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, X, Hash, Layers, Zap } from 'lucide-react';
+import { Search, Layers, Zap } from 'lucide-react';
 import api from '../../lib/api.ts';
 
 interface SearchResult {
   id: string;
   title: string;
   subtitle?: string;
-  type: 'issues' | 'sessions' | 'plugins';
+  type: 'sessions' | 'plugins';
 }
 
 interface SearchResponse {
-  issues?: SearchResult[];
   sessions?: SearchResult[];
   plugins?: SearchResult[];
 }
 
-type Tab = 'all' | 'issues' | 'sessions' | 'plugins';
+type Tab = 'all' | 'sessions' | 'plugins';
 
 const TAB_LABELS: Record<Tab, string> = {
   all: 'All',
-  issues: 'Issues',
   sessions: 'Sessions',
   plugins: 'Plugins',
 };
 
 const TYPE_ICON: Record<SearchResult['type'], React.ReactNode> = {
-  issues: <Hash size={12} />,
   sessions: <Layers size={12} />,
   plugins: <Zap size={12} />,
 };
 
 const TYPE_COLOR: Record<SearchResult['type'], string> = {
-  issues: 'var(--color-primary-dim)',
   sessions: 'var(--color-info-dim)',
   plugins: 'var(--color-warning-dim)',
 };
@@ -111,7 +107,7 @@ export function CommandPalette({ onSelect }: CommandPaletteProps) {
   }, [debouncedQuery]);
 
   const flatResults = useCallback((): SearchResult[] => {
-    const types: SearchResult['type'][] = ['issues', 'sessions', 'plugins'];
+    const types: SearchResult['type'][] = ['sessions', 'plugins'];
     const all: SearchResult[] = [];
     for (const t of types) {
       if (activeTab === 'all' || activeTab === t) {
@@ -184,7 +180,7 @@ export function CommandPalette({ onSelect }: CommandPaletteProps) {
     );
   }
 
-  const tabs: Tab[] = ['all', 'issues', 'sessions', 'plugins'];
+  const tabs: Tab[] = ['all', 'sessions', 'plugins'];
   let globalIndex = 0;
 
   function renderGroup(type: SearchResult['type']) {
@@ -277,8 +273,7 @@ export function CommandPalette({ onSelect }: CommandPaletteProps) {
   }
 
   const hasResults =
-    (results.issues?.length ?? 0) +
-      (results.sessions?.length ?? 0) +
+    (results.sessions?.length ?? 0) +
       (results.plugins?.length ?? 0) >
     0;
 
@@ -328,7 +323,7 @@ export function CommandPalette({ onSelect }: CommandPaletteProps) {
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search issues, sessions, plugins..."
+            placeholder="Search sessions, plugins..."
             style={{
               flex: 1,
               border: 'none',
@@ -420,7 +415,6 @@ export function CommandPalette({ onSelect }: CommandPaletteProps) {
             </div>
           ) : (
             <>
-              {renderGroup('issues')}
               {renderGroup('sessions')}
               {renderGroup('plugins')}
             </>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from 'react-query';
 import { ChevronLeft, Clock, FileText, CheckCircle, Lightbulb, ChevronDown, ChevronUp } from 'lucide-react';
+import { useTranslation } from '@maestro/i18n';
 import api from '../../lib/api.ts';
 import { LoadingSpinner, Alert } from '../../components/ui';
 
@@ -14,7 +15,6 @@ interface SessionDetail {
   tasks: string[] | null;
   decisions: string[] | null;
   changed_files: string[] | null;
-  related_issue_ids: string[] | null;
   session_started_at: string | null;
   session_ended_at: string | null;
   created_at: string;
@@ -62,6 +62,7 @@ function extractHeadline(summary: string): string {
 export default function SessionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [filesExpanded, setFilesExpanded] = useState(false);
 
   const { data: session, isLoading, error } = useQuery<SessionDetail>(
@@ -71,7 +72,7 @@ export default function SessionDetailPage() {
   );
 
   if (isLoading) {
-    return <div className="p-6"><LoadingSpinner text="読み込み中..." /></div>;
+    return <div className="p-6"><LoadingSpinner text={t('common.loading')} /></div>;
   }
 
   if (error || !session) {
@@ -81,9 +82,9 @@ export default function SessionDetailPage() {
           onClick={() => navigate(-1)}
           className="flex items-center gap-1.5 text-sm text-th-text-3 hover:text-th-text mb-4 transition-colors"
         >
-          <ChevronLeft className="h-4 w-4" /> 作業記録一覧
+          <ChevronLeft className="h-4 w-4" /> {t('sessions.backToList')}
         </button>
-        <Alert variant="danger" message="セッションの取得に失敗しました" />
+        <Alert variant="danger" message={t('sessions.fetchError')} />
       </div>
     );
   }
@@ -102,7 +103,7 @@ export default function SessionDetailPage() {
         onClick={() => navigate('/sessions')}
         className="flex items-center gap-1.5 text-sm text-th-text-3 hover:text-th-text transition-colors"
       >
-        <ChevronLeft className="h-4 w-4" /> 作業記録一覧
+        <ChevronLeft className="h-4 w-4" /> {t('sessions.backToList')}
       </button>
 
       {/* Header */}
@@ -122,19 +123,19 @@ export default function SessionDetailPage() {
           {tasks.length > 0 && (
             <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-th-sm bg-th-accent-dim border border-th-accent/20 text-th-accent">
               <CheckCircle className="h-3.5 w-3.5" />
-              タスク {tasks.length} 件
+              {t('sessions.taskCountBadge', { count: tasks.length })}
             </span>
           )}
           {changedFiles.length > 0 && (
             <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-th-sm bg-th-success-dim border border-th-success/20 text-th-success">
               <FileText className="h-3.5 w-3.5" />
-              変更ファイル {changedFiles.length} 件
+              {t('sessions.filesChangedBadge', { count: changedFiles.length })}
             </span>
           )}
           {decisions.length > 0 && (
             <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-th-sm bg-th-warning-dim border border-th-warning/20 text-th-warning">
               <Lightbulb className="h-3.5 w-3.5" />
-              決定事項 {decisions.length} 件
+              {t('sessions.decisionCountBadge', { count: decisions.length })}
             </span>
           )}
         </div>
@@ -144,7 +145,7 @@ export default function SessionDetailPage() {
       {tasks.length > 0 && (
         <div className="bg-th-surface-0 rounded-th-md border border-th-border p-6">
           <h2 className="text-sm font-semibold text-th-text-2 uppercase tracking-wider mb-4">
-            タスク（{tasks.length} 件）
+            {t('sessions.tasksSection', { count: tasks.length })}
           </h2>
           <ul className="space-y-2.5">
             {tasks.map((task, i) => (
@@ -163,7 +164,7 @@ export default function SessionDetailPage() {
       {decisions.length > 0 && (
         <div className="bg-th-surface-0 rounded-th-md border border-th-border p-6">
           <h2 className="text-sm font-semibold text-th-text-2 uppercase tracking-wider mb-4">
-            決定事項（{decisions.length} 件）
+            {t('sessions.decisionsSection', { count: decisions.length })}
           </h2>
           <ol className="space-y-3 pl-4 list-decimal">
             {decisions.map((decision, i) => (
@@ -182,7 +183,7 @@ export default function SessionDetailPage() {
           >
             <h2 className="text-sm font-semibold text-th-text-2 uppercase tracking-wider flex items-center gap-2">
               <FileText className="h-4 w-4" />
-              変更ファイル（{changedFiles.length} 件）
+              {t('sessions.changedFilesSection', { count: changedFiles.length })}
             </h2>
             {filesExpanded
               ? <ChevronUp className="h-4 w-4 text-th-text-3" />
@@ -218,7 +219,7 @@ export default function SessionDetailPage() {
 
       {/* Summary text */}
       <div className="bg-th-surface-0 rounded-th-md border border-th-border p-6">
-        <h2 className="text-sm font-semibold text-th-text-2 uppercase tracking-wider mb-4">サマリー</h2>
+        <h2 className="text-sm font-semibold text-th-text-2 uppercase tracking-wider mb-4">{t('sessions.summary')}</h2>
         <pre className="text-sm text-th-text-2 whitespace-pre-wrap break-words font-sans leading-relaxed max-h-96 overflow-y-auto">
           {session.summary}
         </pre>
@@ -227,16 +228,13 @@ export default function SessionDetailPage() {
       {/* Metadata */}
       <div className="flex flex-wrap gap-6 text-xs text-th-text-4 pt-2 border-t border-th-border">
         {session.session_started_at && (
-          <span>開始: {formatDate(session.session_started_at)}</span>
+          <span>{t('sessions.startedAt', { date: formatDate(session.session_started_at) })}</span>
         )}
         {session.session_ended_at && (
-          <span>終了: {formatDate(session.session_ended_at)}</span>
+          <span>{t('sessions.endedAt', { date: formatDate(session.session_ended_at) })}</span>
         )}
         <span>ID: {session.id}</span>
-        {session.agent_id && <span>エージェント: {session.agent_id.slice(0, 8)}</span>}
-        {session.related_issue_ids && session.related_issue_ids.length > 0 && (
-          <span>関連 Issue: {session.related_issue_ids.join(', ')}</span>
-        )}
+        {session.agent_id && <span>{t('sessions.agentId', { id: session.agent_id.slice(0, 8) })}</span>}
       </div>
     </div>
   );

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { ExternalLink, Plus, X } from 'lucide-react';
 import api from '../../lib/api.ts';
 import { Alert, EmptyState, LoadingSpinner } from '../../components/ui';
+import { useTranslation } from '@maestro/i18n';
 
 interface Job {
   id: string;
@@ -17,25 +18,35 @@ interface Job {
   error_message?: string | null;
 }
 
-const COLUMNS: { status: Job['status']; label: string; color: string; bg: string }[] = [
-  { status: 'pending',  label: '待機中',  color: '#64748b', bg: 'rgba(100,116,139,0.08)' },
-  { status: 'running',  label: '実行中',  color: '#2563eb', bg: 'rgba(59,130,246,0.08)'  },
-  { status: 'done',     label: '完了',    color: '#16a34a', bg: 'rgba(34,197,94,0.08)'   },
-  { status: 'error',    label: 'エラー',  color: '#dc2626', bg: 'rgba(239,68,68,0.08)'   },
-];
-
-function timeAgo(dt: string | null): string {
-  if (!dt) return '—';
-  const diff = Math.floor((Date.now() - new Date(dt).getTime()) / 1000);
-  if (diff < 60) return `${diff}秒前`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}分前`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}時間前`;
-  return new Date(dt).toLocaleDateString('ja-JP');
-}
-
 function JobCard({ job, onDelete }: { job: Job; onDelete: (id: string) => void }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
-  const col = COLUMNS.find((c) => c.status === job.status)!;
+
+  const statusColors: Record<Job['status'], { color: string; bg: string }> = {
+    pending: { color: '#64748b', bg: 'rgba(100,116,139,0.08)' },
+    running: { color: '#2563eb', bg: 'rgba(59,130,246,0.08)' },
+    done:    { color: '#16a34a', bg: 'rgba(34,197,94,0.08)' },
+    error:   { color: '#dc2626', bg: 'rgba(239,68,68,0.08)' },
+  };
+
+  const statusLabels: Record<Job['status'], string> = {
+    pending: t('jobs.statusPending'),
+    running: t('jobs.statusRunning'),
+    done:    t('jobs.statusDone'),
+    error:   t('jobs.statusError'),
+  };
+
+  const col = statusColors[job.status];
+  const statusLabel = statusLabels[job.status];
+
+  function timeAgo(dt: string | null): string {
+    if (!dt) return '—';
+    const diff = Math.floor((Date.now() - new Date(dt).getTime()) / 1000);
+    if (diff < 60) return t('common.timeAgo.seconds', { n: diff });
+    if (diff < 3600) return t('common.timeAgo.minutes', { n: Math.floor(diff / 60) });
+    if (diff < 86400) return t('common.timeAgo.hours', { n: Math.floor(diff / 3600) });
+    return t('common.timeAgo.days', { n: Math.floor(diff / 86400) });
+  }
 
   return (
     <div
@@ -49,7 +60,6 @@ function JobCard({ job, onDelete }: { job: Job; onDelete: (id: string) => void }
       }}
       onClick={() => setExpanded((v) => !v)}
     >
-      {/* タイトル行 */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <p
@@ -70,13 +80,12 @@ function JobCard({ job, onDelete }: { job: Job; onDelete: (id: string) => void }
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(job.id); }}
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-4)', flexShrink: 0, padding: 2 }}
-          title="削除"
+          title={t('jobs.deleteTitle')}
         >
           <X size={14} />
         </button>
       </div>
 
-      {/* Plane リンク */}
       {job.plane_issue_url && (
         <a
           href={job.plane_issue_url}
@@ -94,11 +103,10 @@ function JobCard({ job, onDelete }: { job: Job; onDelete: (id: string) => void }
           }}
         >
           <ExternalLink size={11} />
-          Plane で確認
+          {t('jobs.planeLink')}
         </a>
       )}
 
-      {/* メタ情報 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
         <span
           style={{
@@ -110,14 +118,13 @@ function JobCard({ job, onDelete }: { job: Job; onDelete: (id: string) => void }
             fontWeight: 500,
           }}
         >
-          {col.label}
+          {statusLabel}
         </span>
         <span style={{ fontSize: 11, color: 'var(--color-text-4)', marginLeft: 'auto' }}>
           {timeAgo(job.created_at)}
         </span>
       </div>
 
-      {/* 展開時の詳細 */}
       {expanded && (
         <div style={{ marginTop: 10, borderTop: '1px solid var(--color-border)', paddingTop: 10 }}>
           {job.result && (
@@ -128,7 +135,7 @@ function JobCard({ job, onDelete }: { job: Job; onDelete: (id: string) => void }
           )}
           {job.started_at && (
             <p style={{ fontSize: 11, color: 'var(--color-text-4)', margin: '4px 0 0' }}>
-              開始: {new Date(job.started_at).toLocaleString('ja-JP')}
+              {t('jobs.startedAt', { date: new Date(job.started_at).toLocaleString() })}
             </p>
           )}
         </div>
@@ -138,9 +145,17 @@ function JobCard({ job, onDelete }: { job: Job; onDelete: (id: string) => void }
 }
 
 export default function JobsPage() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [showModal, setShowModal] = useState(false);
   const [prompt, setPrompt] = useState('');
+
+  const columns: { status: Job['status']; label: string; color: string; bg: string }[] = [
+    { status: 'pending', label: t('jobs.statusPending'), color: '#64748b', bg: 'rgba(100,116,139,0.08)' },
+    { status: 'running', label: t('jobs.statusRunning'), color: '#2563eb', bg: 'rgba(59,130,246,0.08)' },
+    { status: 'done',    label: t('jobs.statusDone'),    color: '#16a34a', bg: 'rgba(34,197,94,0.08)'  },
+    { status: 'error',   label: t('jobs.statusError'),   color: '#dc2626', bg: 'rgba(239,68,68,0.08)'  },
+  ];
 
   const { data: jobs, isLoading, error } = useQuery<Job[]>(
     'jobs',
@@ -172,9 +187,9 @@ export default function JobsPage() {
       {/* ヘッダー */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
         <div>
-          <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0 }}>ジョブ</h1>
+          <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0 }}>{t('jobs.title')}</h1>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--color-text-3)' }}>
-            Claudeへの指示 · Plane Issue と自動同期
+            {t('jobs.description')}
           </p>
         </div>
         <button
@@ -188,15 +203,14 @@ export default function JobsPage() {
           }}
         >
           <Plus size={16} />
-          新規ジョブ
+          {t('jobs.newJob')}
         </button>
       </div>
 
-      {!!error && <Alert variant="danger" message="ジョブの読み込みに失敗しました" />}
+      {!!error && <Alert variant="danger" message={t('jobs.loadError')} />}
 
-      {/* Kanban ボード */}
       {isLoading ? (
-        <LoadingSpinner text="読み込み中..." />
+        <LoadingSpinner text={t('jobs.loading')} />
       ) : (
         <div
           style={{
@@ -208,7 +222,7 @@ export default function JobsPage() {
             overflowX: 'auto',
           }}
         >
-          {COLUMNS.map((col) => {
+          {columns.map((col) => {
             const colJobs = jobsByStatus(col.status);
             return (
               <div
@@ -223,7 +237,6 @@ export default function JobsPage() {
                   overflow: 'hidden',
                 }}
               >
-                {/* カラムヘッダー */}
                 <div
                   style={{
                     padding: '10px 14px',
@@ -250,7 +263,6 @@ export default function JobsPage() {
                   </span>
                 </div>
 
-                {/* カード一覧 */}
                 <div
                   style={{
                     padding: '10px',
@@ -263,7 +275,7 @@ export default function JobsPage() {
                 >
                   {colJobs.length === 0 ? (
                     <p style={{ fontSize: 12, color: 'var(--color-text-4)', textAlign: 'center', padding: '12px 0' }}>
-                      なし
+                      {t('jobs.empty')}
                     </p>
                   ) : (
                     colJobs.map((job) => (
@@ -277,7 +289,6 @@ export default function JobsPage() {
         </div>
       )}
 
-      {/* 新規ジョブ モーダル */}
       {showModal && (
         <div
           style={{
@@ -298,9 +309,9 @@ export default function JobsPage() {
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <div>
-                <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>新規ジョブ</h2>
+                <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>{t('jobs.modalTitle')}</h2>
                 <p style={{ fontSize: 12, color: 'var(--color-text-4)', margin: '2px 0 0' }}>
-                  Plane が設定されている場合は自動で Issue が作成されます
+                  {t('jobs.modalDesc')}
                 </p>
               </div>
               <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-3)' }}>
@@ -311,12 +322,12 @@ export default function JobsPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6 }}>
-                  プロンプト（指示内容）
+                  {t('jobs.promptLabel')}
                 </label>
                 <textarea
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="Claudeへの指示を入力してください..."
+                  placeholder={t('jobs.promptPlaceholder')}
                   rows={5}
                   style={{
                     width: '100%', padding: '8px 12px',
@@ -328,13 +339,13 @@ export default function JobsPage() {
                   }}
                 />
               </div>
-              {createJob.isError && <Alert variant="danger" message="ジョブの作成に失敗しました" />}
+              {createJob.isError && <Alert variant="danger" message={t('jobs.createError')} />}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                 <button
                   onClick={() => setShowModal(false)}
                   style={{ padding: '8px 16px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', cursor: 'pointer', fontSize: 14 }}
                 >
-                  キャンセル
+                  {t('common.cancel')}
                 </button>
                 <button
                   onClick={() => createJob.mutate({ prompt })}
@@ -347,7 +358,7 @@ export default function JobsPage() {
                     opacity: !prompt.trim() || createJob.isLoading ? 0.6 : 1,
                   }}
                 >
-                  {createJob.isLoading ? '送信中...' : '送信'}
+                  {createJob.isLoading ? t('jobs.submitting') : t('jobs.submit')}
                 </button>
               </div>
             </div>

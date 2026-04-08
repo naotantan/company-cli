@@ -1,0 +1,16 @@
+{
+  "name": "maestro-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "E2E tests for maestro — all major user journeys",
+  "scripts": {
+    "test": "playwright test --config=playwright.config.ts",
+    "test:headed": "playwright test --headed --config=playwright.config.ts",
+    "test:debug": "playwright test --debug --config=playwright.config.ts",
+    "report": "playwright show-report ../../playwright-report-e2e"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "@types/node": "^20.19.39"
+  }
+}

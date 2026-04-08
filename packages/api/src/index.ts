@@ -5,6 +5,7 @@ import { closeDb } from '@maestro/db';
 import { startHeartbeatEngine, stopHeartbeatEngine } from './engine/heartbeat-engine';
 import { startCrashRecovery, stopCrashRecovery } from './engine/crash-recovery';
 import { startBudgetMonitor, stopBudgetMonitor } from './engine/budget-monitor';
+import { startTranslationResume, stopTranslationResume } from './engine/translation-resume';
 
 const repoRoot = path.resolve(__dirname, '../../../');
 dotenv.config({ path: path.join(repoRoot, '.env') });
@@ -30,6 +31,8 @@ async function main() {
     } else {
       console.log('   エンジン: 無効（ENABLE_ENGINE=true で有効化）');
     }
+    // 未完了翻訳の自動再開（常時有効）
+    startTranslationResume();
   });
 
   // Graceful shutdown
@@ -38,6 +41,7 @@ async function main() {
     stopHeartbeatEngine();
     stopCrashRecovery();
     stopBudgetMonitor();
+    stopTranslationResume();
     server.close(async () => {
       await closeDb();
       process.exit(0);

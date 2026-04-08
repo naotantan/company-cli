@@ -1,4 +1,4 @@
-FROM node:20-alpine AS builder
+FROM node:20-slim AS builder
 WORKDIR /app
 
 # pnpm インストール
@@ -17,6 +17,9 @@ COPY packages/ui/package.json ./packages/ui/
 # 依存インストール
 RUN pnpm install --frozen-lockfile
 
+# sharp ネイティブバイナリを明示的にインストール（pnpm postinstall がスキップされる場合の対策）
+RUN node /app/node_modules/.pnpm/sharp@0.32.6/node_modules/sharp/install/libvips.js 2>/dev/null || true
+
 # ソースコードコピー
 COPY packages/shared ./packages/shared
 COPY packages/adapters ./packages/adapters
@@ -31,8 +34,8 @@ RUN pnpm --filter @maestro/db build
 RUN pnpm --filter @maestro/api build
 
 # 本番イメージ
-FROM node:20-alpine
-RUN apk add --no-cache git postgresql-client curl
+FROM node:20-slim
+RUN apt-get update && apt-get install -y --no-install-recommends git postgresql-client curl ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
 # ビルダーのモノレポnode_modulesをそのままコピー（pnpmのリンク構造を保持）

@@ -83,8 +83,8 @@ export function usePluginActions(): UsePluginActionsReturn {
     const d = res.data.data;
     if (mountedRef.current) {
       setSyncResult(
-        `同期完了: 新規 ${d.imported}件, 更新 ${d.updated}件, 変更なし ${d.skipped}件` +
-        (d.errors?.length ? `, エラー ${d.errors.length}件` : '')
+        t('plugins.syncComplete', { imported: d.imported, updated: d.updated, skipped: d.skipped }) +
+        (d.errors?.length ? t('plugins.syncErrors', { count: d.errors.length }) : '')
       );
       queryClient.invalidateQueries('plugins');
     }
@@ -106,9 +106,9 @@ export function usePluginActions(): UsePluginActionsReturn {
         `${r.repo}: ${r.status === 'updated' ? '✓' : `✗ ${r.error ?? ''}`}`
       ).join(', ');
       const syncSummary = s
-        ? ` / ローカル: 新規 ${s.imported}件, 更新 ${s.updated}件`
+        ? t('plugins.syncLocalSummary', { imported: s.imported, updated: s.updated })
         : '';
-      setSyncResult(`更新完了 — ${repoSummary} / リポジトリ: 新規 ${d.imported}件, 更新 ${d.updated}件${syncSummary}`);
+      setSyncResult(t('plugins.updateComplete', { repos: repoSummary, imported: d.imported, updated: d.updated, sync: syncSummary }));
       queryClient.invalidateQueries('plugins');
     }
   }).catch((err: unknown) => {
@@ -118,7 +118,7 @@ export function usePluginActions(): UsePluginActionsReturn {
   const handleFetchUsage = () => runExclusive('fetchUsage', async () => {
     const res = await api.post('/plugins/fetch-usage', {});
     if (mountedRef.current) {
-      setSyncResult(`使い方取得完了: ${res.data.data.updated}件`);
+      setSyncResult(t('plugins.fetchUsageComplete', { count: res.data.data.updated }));
       queryClient.invalidateQueries('plugins');
     }
   }).catch((err: unknown) => {
@@ -128,7 +128,7 @@ export function usePluginActions(): UsePluginActionsReturn {
   const handleCategorize = () => runExclusive('categorize', async () => {
     const res = await api.post('/plugins/categorize', {});
     if (mountedRef.current) {
-      setSyncResult(`カテゴリ分類完了: ${res.data.data.categorized}件`);
+      setSyncResult(t('plugins.categorizeComplete', { count: res.data.data.categorized }));
       queryClient.invalidateQueries('plugins');
     }
   }).catch((err: unknown) => {
@@ -139,7 +139,8 @@ export function usePluginActions(): UsePluginActionsReturn {
     const res = await api.post('/plugins/translate-usage', {});
     const d = res.data.data;
     if (mountedRef.current) {
-      setSyncResult(`翻訳完了: ${d.translated}件 / 対象 ${d.total}件${d.failed ? ` (失敗 ${d.failed}件)` : ''}`);
+      const descMsg = d.descTranslated ? t('plugins.translateDescSuffix', { count: d.descTranslated }) : '';
+      setSyncResult(t('plugins.translateComplete', { translated: d.translated, desc: descMsg, total: d.total, failed: d.failed ? t('plugins.translateFailedSuffix', { count: d.failed }) : '' }));
       queryClient.invalidateQueries('plugins');
     }
   }).catch((err: unknown) => {

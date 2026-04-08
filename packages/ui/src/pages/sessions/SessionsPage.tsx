@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useQuery } from 'react-query';
 import { useTranslation } from '@maestro/i18n';
 import api from '../../lib/api.ts';
 import { formatDate } from '../../lib/date.ts';
 import { LoadingSpinner, Alert, EmptyState } from '../../components/ui';
-import { ChevronDown, ChevronUp, FileText, Clock, Calendar } from 'lucide-react';
+import { ChevronDown, ChevronUp, FileText, Clock, Calendar, Search, X, Sparkles } from 'lucide-react';
 import { clsx } from 'clsx';
 
 interface SessionSummary {
@@ -12,15 +12,15 @@ interface SessionSummary {
   company_id: string;
   session_id: string | null;
   agent_id: string | null;
-  summary: string;
+  summary?: string;
   headline: string | null;
   tasks: string[] | null;
   decisions: string[] | null;
   changed_files: string[] | null;
-  related_issue_ids: string[] | null;
   session_started_at: string | null;
   session_ended_at: string | null;
   created_at: string;
+  similarity?: number;
 }
 
 interface SessionResponse {
@@ -156,22 +156,49 @@ export default function SessionsPage() {
   const { t } = useTranslation();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeSearch, setActiveSearch] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const limit = 10;
 
   const { data: response, isLoading, error } = useQuery<SessionResponse>(
     ['session-summaries', page],
     () => api.get('/session-summaries', { params: { page, limit } }).then((r) => r.data),
+    { enabled: !activeSearch },
   );
 
-  const sessions = response?.data ?? [];
-  const total = response?.meta?.total ?? sessions.length;
-  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const { data: searchResponse, isLoading: isSearching } = useQuery<{ data: SessionSummary[]; meta: { q: string; limit: number } }>(
+    ['session-summaries-search', activeSearch],
+    () => api.get('/session-summaries/search', { params: { q: activeSearch, limit: 20 } }).then((r) => r.data),
+    { enabled: !!activeSearch },
+  );
 
-  if (isLoading) {
+  const handleSearch = useCallback(() => {
+    const q = searchQuery.trim();
+    if (!q) return;
+    setActiveSearch(q);
+    setPage(1);
+    setExpandedId(null);
+  }, [searchQuery]);
+
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery('');
+    setActiveSearch('');
+    setExpandedId(null);
+    searchInputRef.current?.focus();
+  }, []);
+
+  const isSearchMode = !!activeSearch;
+  const sessions = isSearchMode ? (searchResponse?.data ?? []) : (response?.data ?? []);
+  const total = response?.meta?.total ?? (response?.data?.length ?? 0);
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const loading = isSearchMode ? isSearching : isLoading;
+
+  if (!isSearchMode && isLoading) {
     return <div className="p-6"><LoadingSpinner text={t('sessions.loading')} /></div>;
   }
 
-  if (error) {
+  if (!isSearchMode && error) {
     return (
       <div className="p-6 space-y-4 max-w-4xl">
         <h1 className="text-3xl font-bold">{t('sessions.title')}</h1>
@@ -192,19 +219,77 @@ export default function SessionsPage() {
         </p>
       </div>
 
-      {/* Stats */}
-      <div className="flex gap-4">
-        <div className="rounded-th border border-th-border bg-th-surface-1 px-4 py-3 flex items-center gap-2">
-          <Calendar className="h-4 w-4 text-th-text-3" />
-          <span className="text-sm text-th-text-2">{t('sessions.recordCount', { count: total })}</span>
+      {/* Search bar */}
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-th-text-4 pointer-events-none" />
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+            placeholder={t('sessions.searchPlaceholder')}
+            className="w-full pl-9 pr-9 py-2 text-sm rounded-th border border-th-border bg-th-surface-1 text-th-text placeholder:text-th-text-4 focus:outline-none focus:border-th-accent transition-colors"
+          />
+          {searchQuery && (
+            <button
+              onClick={handleClearSearch}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-th-text-4 hover:text-th-text-2 transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
+        <button
+          onClick={handleSearch}
+          disabled={!searchQuery.trim()}
+          className={clsx(
+            'flex items-center gap-1.5 px-4 py-2 rounded-th text-sm font-medium transition-colors',
+            searchQuery.trim()
+              ? 'bg-th-accent text-white hover:bg-th-accent/90'
+              : 'bg-th-surface-1 text-th-text-4 cursor-not-allowed border border-th-border',
+          )}
+        >
+          <Sparkles className="h-3.5 w-3.5" />
+          {t('sessions.semanticSearch')}
+        </button>
       </div>
 
-      {sessions.length === 0 ? (
+      {/* Search result banner */}
+      {isSearchMode && (
+        <div className="flex items-center justify-between rounded-th border border-th-accent/30 bg-th-accent-dim px-4 py-2.5">
+          <div className="flex items-center gap-2 text-sm text-th-accent">
+            <Sparkles className="h-4 w-4" />
+            <span>{t('sessions.searchResultBanner', { query: activeSearch, count: sessions.length })}</span>
+          </div>
+          <button
+            onClick={handleClearSearch}
+            className="text-xs text-th-accent hover:text-th-text transition-colors flex items-center gap-1"
+          >
+            <X className="h-3.5 w-3.5" />
+            {t('sessions.clearSearch')}
+          </button>
+        </div>
+      )}
+
+      {/* Stats (通常モードのみ) */}
+      {!isSearchMode && (
+        <div className="flex gap-4">
+          <div className="rounded-th border border-th-border bg-th-surface-1 px-4 py-3 flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-th-text-3" />
+            <span className="text-sm text-th-text-2">{t('sessions.recordCount', { count: total })}</span>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="py-12"><LoadingSpinner text={isSearchMode ? t('sessions.searching') : t('sessions.loading')} /></div>
+      ) : sessions.length === 0 ? (
         <EmptyState
-          icon="📝"
-          title={t('sessions.emptyTitle')}
-          description={t('sessions.emptyDescription')}
+          icon={isSearchMode ? '🔍' : '📝'}
+          title={isSearchMode ? t('sessions.searchEmpty') : t('sessions.emptyTitle')}
+          description={isSearchMode ? t('sessions.searchEmptyDesc') : t('sessions.emptyDescription')}
         />
       ) : (
         <>
@@ -217,10 +302,11 @@ export default function SessionsPage() {
               {sessions.map((session) => {
                 const isExpanded = expandedId === session.id;
                 // 構造化データがあればそちらを優先、なければMarkdownから抽出
-                const headline = session.headline ?? extractHeadline(session.summary);
-                const tasks = session.tasks ?? extractTasks(session.summary);
-                const decisions = session.decisions ?? extractDecisions(session.summary);
-                const summaryPreview = tasks.length === 0 ? extractSummaryPreview(session.summary) : [];
+                const headline = session.headline ?? (session.summary ? extractHeadline(session.summary) : t('sessions.sessionRecord'));
+                const tasks = session.tasks ?? (session.summary ? extractTasks(session.summary) : []);
+                const decisions = session.decisions ?? (session.summary ? extractDecisions(session.summary) : []);
+                const similarityPct = session.similarity != null ? Math.round(session.similarity * 100) : null;
+                const summaryPreview = tasks.length === 0 && session.summary ? extractSummaryPreview(session.summary) : [];
                 const fileCount = session.changed_files?.length ?? 0;
                 const dateStr = session.session_ended_at ?? session.created_at;
 
@@ -260,7 +346,7 @@ export default function SessionsPage() {
                                   </li>
                                 ))}
                                 {tasks.length > 3 && (
-                                  <li className="text-xs text-th-text-4 pl-4">他 {tasks.length - 3} 件...</li>
+                                  <li className="text-xs text-th-text-4 pl-4">{t('sessions.moreItems', { count: tasks.length - 3 })}</li>
                                 )}
                               </ul>
                             )}
@@ -279,25 +365,31 @@ export default function SessionsPage() {
 
                             {/* Badges */}
                             <div className="flex gap-2 mt-3 flex-wrap">
+                              {similarityPct != null && (
+                                <span className={clsx(
+                                  'inline-flex items-center gap-1 text-xs px-2 py-1 rounded-th-sm border',
+                                  similarityPct >= 85
+                                    ? 'bg-th-accent-dim text-th-accent border-th-accent/20'
+                                    : 'bg-th-surface-2 text-th-text-3 border-th-border',
+                                )}>
+                                  <Sparkles className="h-3 w-3" />
+                                  {t('sessions.similarity', { pct: similarityPct })}
+                                </span>
+                              )}
                               {fileCount > 0 && (
                                 <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-th-sm bg-th-success-dim text-th-success border border-th-success/20">
                                   <FileText className="h-3 w-3" />
-                                  {fileCount} ファイル変更
+                                  {t('sessions.filesChanged', { count: fileCount })}
                                 </span>
                               )}
                               {tasks.length > 0 && (
                                 <span className="text-xs px-2 py-1 rounded-th-sm bg-th-accent-dim text-th-accent border border-th-accent/20">
-                                  {tasks.length} 件の作業
+                                  {t('sessions.taskCount', { count: tasks.length })}
                                 </span>
                               )}
                               {decisions.length > 0 && (
                                 <span className="text-xs px-2 py-1 rounded-th-sm bg-th-warning-dim text-th-warning border border-th-warning/20">
-                                  {decisions.length} 件の決定
-                                </span>
-                              )}
-                              {session.related_issue_ids && session.related_issue_ids.length > 0 && (
-                                <span className="text-xs px-2 py-1 rounded-th-sm bg-th-info-dim text-th-info border border-th-info/20">
-                                  {session.related_issue_ids.length} Issue
+                                  {t('sessions.decisionCount', { count: decisions.length })}
                                 </span>
                               )}
                             </div>
@@ -317,7 +409,7 @@ export default function SessionsPage() {
                           {/* Tasks */}
                           {tasks.length > 0 && (
                             <div>
-                              <h4 className="text-xs font-semibold text-th-text-3 uppercase tracking-wider mb-2">作業内容</h4>
+                              <h4 className="text-xs font-semibold text-th-text-3 uppercase tracking-wider mb-2">{t('sessions.tasksHeading')}</h4>
                               <ul className="space-y-1.5">
                                 {tasks.map((task, i) => (
                                   <li key={i} className="flex items-start gap-2 text-sm text-th-text-2">
@@ -332,7 +424,7 @@ export default function SessionsPage() {
                           {/* Decisions */}
                           {decisions.length > 0 && (
                             <div>
-                              <h4 className="text-xs font-semibold text-th-text-3 uppercase tracking-wider mb-2">決定事項</h4>
+                              <h4 className="text-xs font-semibold text-th-text-3 uppercase tracking-wider mb-2">{t('sessions.decisionsHeading')}</h4>
                               <ul className="space-y-1.5">
                                 {decisions.map((d, i) => (
                                   <li key={i} className="flex items-start gap-2 text-sm text-th-text-2">
@@ -348,7 +440,7 @@ export default function SessionsPage() {
                           {session.changed_files && session.changed_files.length > 0 && (
                             <div>
                               <h4 className="text-xs font-semibold text-th-text-3 uppercase tracking-wider mb-2">
-                                変更ファイル ({session.changed_files.length})
+                                {t('sessions.changedFilesHeading', { count: session.changed_files.length })}
                               </h4>
                               <div className="max-h-48 overflow-y-auto rounded-th-sm bg-th-surface-0 p-3">
                                 {session.changed_files.map((file, i) => (
@@ -363,7 +455,7 @@ export default function SessionsPage() {
                           {/* Full summary (collapsible raw) */}
                           <details className="group">
                             <summary className="text-xs font-semibold text-th-text-4 uppercase tracking-wider cursor-pointer hover:text-th-text-2 transition-colors">
-                              全文を表示
+                              {t('sessions.showFullText')}
                             </summary>
                             <div className="mt-3 rounded-th-sm bg-th-surface-0 p-4 max-h-96 overflow-y-auto">
                               <pre className="text-xs text-th-text-3 whitespace-pre-wrap break-words font-sans leading-relaxed">
@@ -375,10 +467,10 @@ export default function SessionsPage() {
                           {/* Metadata */}
                           <div className="pt-3 border-t border-th-border/50 flex gap-6 text-xs text-th-text-4">
                             {session.session_started_at && (
-                              <span>開始: {formatDate(session.session_started_at)}</span>
+                              <span>{t('sessions.startedAt', { date: formatDate(session.session_started_at) })}</span>
                             )}
                             {session.session_ended_at && (
-                              <span>終了: {formatDate(session.session_ended_at)}</span>
+                              <span>{t('sessions.endedAt', { date: formatDate(session.session_ended_at) })}</span>
                             )}
                             <span>ID: {session.id.slice(0, 8)}</span>
                           </div>
@@ -391,8 +483,8 @@ export default function SessionsPage() {
             </div>
           </div>
 
-          {/* Pagination */}
-          {totalPages > 1 && (
+          {/* Pagination (通常モードのみ) */}
+          {!isSearchMode && totalPages > 1 && (
             <div className="flex items-center justify-center gap-2 mt-6">
               <button
                 onClick={() => setPage(Math.max(1, page - 1))}
@@ -402,7 +494,7 @@ export default function SessionsPage() {
                   page === 1 ? 'bg-th-surface-1 text-th-text-4 cursor-not-allowed' : 'bg-th-surface-1 text-th-text-2 hover:bg-th-surface-2',
                 )}
               >
-                前へ
+                {t('common.previous')}
               </button>
               {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => i + 1).map((p) => (
                 <button
@@ -424,7 +516,7 @@ export default function SessionsPage() {
                   page === totalPages ? 'bg-th-surface-1 text-th-text-4 cursor-not-allowed' : 'bg-th-surface-1 text-th-text-2 hover:bg-th-surface-2',
                 )}
               >
-                次へ
+                {t('common.next')}
               </button>
             </div>
           )}

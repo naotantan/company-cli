@@ -1,90 +1,442 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from 'react-query';
 import { Link } from 'react-router-dom';
-import { Activity, Bot, ClipboardList, Loader2, Send, Square, Zap } from 'lucide-react';
+import {
+  Bot, Zap, Terminal, Loader2, Send, Square,
+  Clock, FileCode, TrendingUp, ChevronRight,
+  AlertTriangle, CheckCircle2, Circle, XCircle,
+} from 'lucide-react';
 import { clsx } from 'clsx';
 import { useTranslation } from '@maestro/i18n';
 import api from '../lib/api.ts';
-import { formatDate } from '../lib/date.ts';
-import {
-  Card,
-  CardBody,
-  CardHeader,
-  LoadingSpinner,
-  EmptyState,
-  Alert,
-} from '../components/ui';
+import { Alert, Card, CardBody, LoadingSpinner } from '../components/ui';
+
+// ─── 型定義 ────────────────────────────────────────────────────────────────
+
+interface AnalyticsOverview {
+  active_agents: number;
+  open_issues: number;
+  today_sessions: number;
+  total_skills: number;
+}
+
+interface SessionRow {
+  id: string;
+  headline: string | null;
+  session_ended_at: string;
+  changed_files: string[] | null;
+  agent_id: string | null;
+}
+
+interface AnalyticsSessions {
+  data: SessionRow[];
+  meta: { total_sessions: number; total_files_changed: number; period: string };
+}
 
 interface SkillUsageStat {
   name: string;
   count: number;
-  is_fallback?: boolean;
 }
 
-interface SkillUsageResponse {
-  data: SkillUsageStat[];
-  meta: { period: string; since: string; is_fallback?: boolean };
+interface Job {
+  id: string;
+  prompt: string;
+  status: string;
+  result: string | null;
+  error_message: string | null;
+  created_at: string;
 }
 
-function SkillUsageChart({ period }: { period: '24h' | '7d' }) {
-  const label = period === '24h' ? '過去24時間' : '過去1週間';
-  const refetchInterval = period === '24h' ? 10 * 60 * 1000 : 3 * 60 * 60 * 1000;
+interface CostEvent {
+  id: string;
+  model: string;
+  cost_usd: string;
+  input_tokens: number;
+  output_tokens: number;
+  created_at: string;
+}
 
-  const { data, isLoading } = useQuery<SkillUsageResponse>(
-    ['skillUsageStats', period],
-    () => api.get(`/plugins/usage-stats?period=${period}`).then(r => r.data),
-    { refetchInterval, staleTime: refetchInterval / 2 },
+// ─── ユーティリティ ─────────────────────────────────────────────────────────
+
+function relativeTime(dateStr: string, t: (key: string, opts?: Record<string, unknown>) => string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return t('dashboard.justNow');
+  if (min < 60) return t('dashboard.minutesAgo', { count: min });
+  const h = Math.floor(min / 60);
+  if (h < 24) return t('dashboard.hoursAgo', { count: h });
+  const d = Math.floor(h / 24);
+  return t('dashboard.daysAgo', { count: d });
+}
+
+function shortDate(dateStr: string): string {
+  const d = new Date(dateStr);
+  return d.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' });
+}
+
+// ─── メトリクスカード ────────────────────────────────────────────────────────
+
+function MetricCard({
+  label, value, icon, to, trend, trendLabel, barPercent, barColor,
+}: {
+  label: string;
+  value: number | string;
+  icon: React.ReactNode;
+  to?: string;
+  trend?: 'up' | 'down' | 'neutral';
+  trendLabel?: string;
+  barPercent?: number;
+  barColor?: string;
+}) {
+  const content = (
+    <div className="relative bg-th-surface-0 rounded-th border border-th-border p-5 shadow-th overflow-hidden hover:border-th-accent/30 transition-colors group">
+      <div className="flex justify-between items-start mb-3">
+        <span className="text-[13px] font-medium text-th-text-3">{label}</span>
+        <div className="bg-th-surface-2 text-th-text-3 p-1.5 rounded-th-md group-hover:text-th-accent transition-colors">
+          {icon}
+        </div>
+      </div>
+      <div className="flex items-baseline gap-2">
+        <span className="text-3xl font-bold gradient-text">{value}</span>
+        {trendLabel && (
+          <span className={clsx(
+            'text-xs font-medium flex items-center gap-0.5',
+            trend === 'up' ? 'text-th-success' : trend === 'down' ? 'text-th-danger' : 'text-th-text-4',
+          )}>
+            {trendLabel}
+          </span>
+        )}
+      </div>
+      {barPercent !== undefined && (
+        <div className="absolute bottom-0 left-0 w-full h-1 bg-th-surface-2">
+          <div
+            className={clsx('h-full rounded-r-full transition-all duration-700', barColor ?? 'bg-th-accent')}
+            style={{ width: `${barPercent}%` }}
+          />
+        </div>
+      )}
+    </div>
   );
 
-  const stats = data?.data ?? [];
-  const isFallback = data?.meta?.is_fallback ?? false;
-  const displayLabel = isFallback ? '全期間' : label;
+  if (to) return <Link to={to} className="block">{content}</Link>;
+  return content;
+}
+
+// ─── アクティビティフィード ──────────────────────────────────────────────────
+
+function ActivityFeed() {
+  const { t } = useTranslation();
+  const { data, isLoading } = useQuery<AnalyticsSessions>(
+    ['analytics-sessions', '7d'],
+    () => api.get('/analytics/sessions?period=7d').then(r => r.data),
+    { staleTime: 5 * 60 * 1000, refetchInterval: 10 * 60 * 1000 },
+  );
+
+  const sessions = (data?.data ?? []).slice(0, 5);
+
+  const sessionIcon = (s: SessionRow) => {
+    const filesCount = Array.isArray(s.changed_files) ? s.changed_files.length : 0;
+    if (filesCount > 0) return <FileCode className="h-4 w-4" />;
+    return <Bot className="h-4 w-4" />;
+  };
+
+  return (
+    <Card>
+      <CardBody className="p-5">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-sm font-semibold text-th-text flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-th-accent animate-pulse" />
+            {t('dashboard.liveActivity')}
+          </h2>
+          <Link
+            to="/sessions"
+            className="flex items-center gap-1 text-[12px] text-th-accent hover:opacity-80 transition-opacity"
+          >
+            {t('dashboard.viewAll')} <ChevronRight className="h-3 w-3" />
+          </Link>
+        </div>
+
+        {isLoading ? (
+          <div className="space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="h-14 rounded-th bg-th-surface-1 animate-pulse" />
+            ))}
+          </div>
+        ) : sessions.length === 0 ? (
+          <p className="text-xs text-th-text-4 text-center py-10">{t('dashboard.noSessions')}</p>
+        ) : (
+          <div className="space-y-1 relative">
+            {/* タイムライン縦線 */}
+            <div className="absolute left-[17px] top-9 bottom-0 w-px bg-th-border pointer-events-none" />
+
+            {sessions.map((s, idx) => {
+              const filesCount = Array.isArray(s.changed_files) ? s.changed_files.length : 0;
+              const isLast = idx === sessions.length - 1;
+
+              return (
+                <Link
+                  key={s.id}
+                  to={`/sessions/${s.id}`}
+                  className="relative flex gap-4 p-2.5 rounded-th-md hover:bg-th-surface-1 transition-colors group"
+                >
+                  {/* アイコン */}
+                  <div className="relative z-10 flex-shrink-0 w-9 h-9 rounded-full border border-th-border bg-th-surface-0 flex items-center justify-center text-th-accent group-hover:border-th-accent/40 transition-colors">
+                    {sessionIcon(s)}
+                  </div>
+
+                  {/* コンテンツ */}
+                  <div className="flex-1 min-w-0 pb-2">
+                    <div className="flex justify-between items-start">
+                      <p className="text-sm font-medium text-th-text-2 group-hover:text-th-text transition-colors truncate">
+                        {s.headline ?? t('dashboard.noTitle')}
+                      </p>
+                      <span className="flex-shrink-0 text-[11px] text-th-text-4 font-mono ml-2">
+                        {relativeTime(s.session_ended_at, t)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      {filesCount > 0 && (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-th-text-4 bg-th-surface-2 px-1.5 py-0.5 rounded border border-th-border">
+                          <FileCode className="h-2.5 w-2.5" />
+                          {t('dashboard.filesChanged', { count: filesCount })}
+                        </span>
+                      )}
+                      <span className="text-[10px] text-th-text-4">{shortDate(s.session_ended_at)}</span>
+                    </div>
+                  </div>
+
+                  {/* タイムライン終端マーカー */}
+                  {isLast && (
+                    <div className="absolute left-[17px] top-9 bottom-0 w-px bg-gradient-to-b from-th-border to-transparent pointer-events-none" />
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
+// ─── ジョブキュー ─────────────────────────────────────────────────────────────
+
+function JobQueue() {
+  const { t } = useTranslation();
+  const [prompt, setPrompt] = useState('');
+  const [sending, setSending] = useState(false);
+  const [jobError, setJobError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  const { data: recentJobs = [] } = useQuery<Job[]>(
+    'jobs-recent',
+    () => api.get('/jobs?limit=6').then(r => r.data.data),
+    { refetchInterval: 5000 },
+  );
+
+  const handleSend = async () => {
+    if (!prompt.trim() || sending) return;
+    setSending(true);
+    setJobError(null);
+    try {
+      await api.post('/jobs', { prompt: prompt.trim() });
+      setPrompt('');
+      queryClient.invalidateQueries('jobs-recent');
+    } catch {
+      setJobError(t('dashboard.sendFailed'));
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleStop = async (jobId: string) => {
+    try {
+      await api.patch(`/jobs/${jobId}`, { status: 'cancelled' });
+      queryClient.invalidateQueries('jobs-recent');
+    } catch { /* noop */ }
+  };
+
+  const activeJob = recentJobs.find(j => j.status === 'pending' || j.status === 'running');
+
+  const STATUS_STYLE: Record<string, string> = {
+    done: 'bg-th-success-dim text-th-success',
+    running: 'bg-th-accent-dim text-th-accent',
+    pending: 'bg-th-warning-dim text-th-warning',
+    error: 'bg-th-danger-dim text-th-danger',
+    cancelled: 'bg-th-surface-2 text-th-text-4',
+  };
+
+  const STATUS_ICON: Record<string, React.ReactNode> = {
+    done: <CheckCircle2 className="h-3 w-3" />,
+    running: <Loader2 className="h-3 w-3 animate-spin" />,
+    pending: <Circle className="h-3 w-3" />,
+    error: <AlertTriangle className="h-3 w-3" />,
+    cancelled: <XCircle className="h-3 w-3" />,
+  };
+
+  const jobStatusLabel = (status: string): string => {
+    const map: Record<string, string> = {
+      done: t('dashboard.statusDone'),
+      running: t('dashboard.statusRunning'),
+      pending: t('dashboard.statusPending'),
+      error: t('dashboard.statusError'),
+      cancelled: t('dashboard.statusCancelled'),
+    };
+    return map[status] ?? status;
+  };
+
+  const activeCount = recentJobs.filter(j => j.status === 'running' || j.status === 'pending').length;
+
+  return (
+    <Card>
+      <CardBody className="p-5 space-y-4">
+        {/* ヘッダー */}
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-th-text flex items-center gap-2">
+            <Terminal className="h-4 w-4 text-th-text-3" />
+            {t('dashboard.jobQueue')}
+          </h2>
+          <div className="flex items-center gap-2">
+            {activeCount > 0 && (
+              <span className="bg-th-accent-dim text-th-accent text-[10px] font-bold px-2 py-0.5 rounded-full">
+                {t('dashboard.activeJobs', { count: activeCount })}
+              </span>
+            )}
+            <Link to="/jobs" className="flex items-center gap-1 text-[11px] text-th-accent hover:opacity-80 transition-opacity">
+              {t('dashboard.jobListLink')} <ChevronRight className="h-3 w-3" />
+            </Link>
+          </div>
+        </div>
+
+        {/* ジョブエラー */}
+        {jobError && <Alert variant="danger" message={jobError} onClose={() => setJobError(null)} />}
+
+        {/* 指示入力 */}
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleSend(); }}
+            placeholder={t('dashboard.instructionPlaceholder')}
+            disabled={sending || !!activeJob}
+            className="flex-1 bg-th-surface-1 border border-th-border rounded-th-md px-3 py-2 text-sm text-th-text placeholder-th-text-4 focus:outline-none focus:border-th-accent disabled:opacity-50"
+          />
+          {activeJob ? (
+            <button
+              onClick={() => handleStop(activeJob.id)}
+              className="shrink-0 inline-flex items-center gap-1.5 rounded-th-md border border-th-danger/30 bg-th-danger-dim px-3 py-2 text-sm font-medium text-th-danger hover:opacity-80 transition-colors"
+            >
+              <Square className="h-3.5 w-3.5" />
+              {t('dashboard.stopJob')}
+            </button>
+          ) : (
+            <button
+              onClick={handleSend}
+              disabled={!prompt.trim() || sending}
+              className="shrink-0 inline-flex items-center gap-1.5 rounded-th-md border border-th-accent/30 bg-th-accent-dim px-3 py-2 text-sm font-medium text-th-accent hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+              {t('common.send', { defaultValue: '送信' })}
+            </button>
+          )}
+        </div>
+
+        {/* ジョブリスト */}
+        {recentJobs.length > 0 && (
+          <div className="space-y-1.5 max-h-52 overflow-y-auto">
+            {recentJobs.map(job => (
+              <div
+                key={job.id}
+                className="flex items-start gap-2.5 rounded-th-sm border border-th-border bg-th-surface-1 px-2.5 py-2 hover:bg-th-surface-2 transition-colors"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-th-text-2 truncate">{job.prompt}</p>
+                  {job.result && (
+                    <p className="text-[10px] text-th-text-4 mt-1 truncate">{job.result}</p>
+                  )}
+                  {job.error_message && (
+                    <p className="text-[10px] text-th-danger mt-1 truncate">{job.error_message}</p>
+                  )}
+                </div>
+                <span className={clsx(
+                  'flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium rounded-full px-2 py-0.5 whitespace-nowrap',
+                  STATUS_STYLE[job.status] ?? 'bg-th-surface-2 text-th-text-4',
+                )}>
+                  {STATUS_ICON[job.status]}
+                  {jobStatusLabel(job.status)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* キュー一時停止ボタン */}
+        {activeCount > 0 && (
+          <button
+            className="w-full py-2 text-[12px] font-medium text-th-text-3 hover:text-th-text border border-th-border rounded-th-md transition-colors bg-th-surface-1 hover:bg-th-surface-2 flex justify-center items-center gap-2"
+            onClick={() => recentJobs
+              .filter(j => j.status === 'pending')
+              .forEach(j => handleStop(j.id))}
+          >
+            <Square className="h-3.5 w-3.5" />
+            {t('dashboard.pauseQueue')}
+          </button>
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
+// ─── スキル使用グラフ ─────────────────────────────────────────────────────────
+
+function SkillUsageChart() {
+  const { t } = useTranslation();
+  const { data, isLoading } = useQuery<{ data: SkillUsageStat[] }>(
+    ['skill-usage', '7d'],
+    () => api.get('/plugins/usage-stats?period=7d').then(r => r.data),
+    { staleTime: 3 * 60 * 60 * 1000, refetchInterval: 3 * 60 * 60 * 1000 },
+  );
+
+  const stats = (data?.data ?? []).slice(0, 7);
   const maxCount = stats.reduce((m, s) => Math.max(m, s.count), 1);
 
   return (
     <Card>
-      <CardBody className="p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-th-text">
-            {displayLabel} スキル使用 Top10
-            {isFallback && (
-              <span className="ml-1.5 text-[10px] font-normal text-th-warning bg-th-warning-dim px-1.5 py-0.5 rounded">
-                期間内データなし・全期間表示
-              </span>
-            )}
-          </h3>
-          <span className="text-[10px] text-th-text-4">
-            {period === '24h' ? '10分更新' : '3時間更新'}
-          </span>
+      <CardBody className="p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold text-th-text flex items-center gap-2">
+            <TrendingUp className="h-4 w-4 text-th-text-3" />
+            {t('dashboard.skillUsageTop7')}
+          </h2>
+          <span className="text-[10px] text-th-text-4">7d</span>
         </div>
 
         {isLoading ? (
           <div className="space-y-2">
             {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <div className="h-3 rounded bg-th-surface-2 flex-1 animate-pulse" style={{ width: `${60 + i * 8}%` }} />
-              </div>
+              <div key={i} className="h-6 rounded bg-th-surface-1 animate-pulse" />
             ))}
           </div>
         ) : stats.length === 0 ? (
-          <p className="text-xs text-th-text-4 py-4 text-center">この期間にスキル使用の記録がありません</p>
+          <p className="text-xs text-th-text-4 text-center py-6">{t('dashboard.noSkillUsage')}</p>
         ) : (
-          <div className="space-y-1.5">
+          <div className="space-y-2.5">
             {stats.map((stat, i) => {
               const pct = Math.round((stat.count / maxCount) * 100);
               return (
-                <div key={stat.name} className="flex items-center gap-2 group">
-                  <span className="text-[10px] text-th-text-4 w-4 text-right flex-shrink-0">{i + 1}</span>
+                <div key={stat.name} className="flex items-center gap-2">
+                  <span className="text-[10px] text-th-text-4 w-3.5 text-right flex-shrink-0">{i + 1}</span>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-xs text-th-text truncate max-w-[80%]" title={stat.name}>
+                      <span className="text-xs text-th-text-2 truncate max-w-[75%]" title={stat.name}>
                         {stat.name}
                       </span>
                       <span className="text-xs font-bold text-th-accent flex-shrink-0 ml-1">{stat.count}</span>
                     </div>
                     <div className="h-1.5 rounded-full bg-th-surface-2 overflow-hidden">
                       <div
-                        className="h-full rounded-full bg-th-accent transition-all duration-500"
+                        className="h-full rounded-full bg-gradient-to-r from-th-accent/60 to-th-accent transition-all duration-700"
                         style={{ width: `${pct}%` }}
                       />
                     </div>
@@ -99,482 +451,287 @@ function SkillUsageChart({ period }: { period: '24h' | '7d' }) {
   );
 }
 
-// GET /api/agents のレスポンス型
-interface Agent {
-  id: string;
-  company_id: string;
-  name: string;
-  type: string;
-  enabled: boolean;
-  created_at: string;
-  updated_at: string;
-  last_heartbeat_at?: string;
-}
+// ─── コスト概要 ───────────────────────────────────────────────────────────────
 
-// GET /api/issues のレスポンス型
-interface Issue {
-  id: string;
-  identifier: string;
-  title: string;
-  status: string;
-  priority: number;
-  created_at: string;
-}
-
-// GET /api/activity のレスポンス型
-interface ActivityLog {
-  id: string;
-  company_id: string;
-  actor_id: string;
-  entity_type: string;
-  entity_id: string;
-  entity_name: string | null;
-  updated_fields?: string[] | null;
-  action: string;
-  created_at: string;
-}
-
-const ACTION_LABEL: Record<string, string> = { create: '作成', update: '更新', delete: '削除' };
-const ACTION_STYLE: Record<string, string> = {
-  create: 'bg-th-success-dim text-th-success',
-  update: 'bg-th-accent-dim text-th-accent',
-  delete: 'bg-th-danger-dim text-th-danger',
-};
-const ENTITY_LABEL: Record<string, string> = {
-  issue: '課題', goal: 'ゴール', project: 'プロジェクト',
-  agent: 'エージェント', routine: 'ルーティン', plugin: 'スキル',
-  memory: 'メモリ', approval: '承認',
-};
-
-function formatActivityMessage(activity: ActivityLog): string {
-  const entity = ENTITY_LABEL[activity.entity_type] ?? activity.entity_type;
-  const action = ACTION_LABEL[activity.action] ?? activity.action;
-  const name = activity.entity_name;
-
-  if (!name) {
-    // entity_nameがない場合（sync操作など）
-    if (activity.action === 'create' && activity.entity_type === 'plugin') {
-      return `スキルの一括同期を実行`;
-    }
-    return `${entity}を${action}`;
-  }
-
-  if (activity.action === 'create') {
-    return `${entity}「${name}」を${action}`;
-  }
-  if (activity.action === 'update' && activity.updated_fields?.length) {
-    return `${entity}「${name}」の ${activity.updated_fields.join(', ')} を更新`;
-  }
-  if (activity.action === 'delete') {
-    return `${entity}「${name}」を${action}`;
-  }
-  return `${entity}「${name}」を${action}`;
-}
-
-// AgentType → 表示名
-const AGENT_TYPE_LABEL: Record<string, string> = {
-  claude_local:      'Claude Code',
-  claude_api:        'Claude API',
-  codex_local:       'Codex',
-  cursor:            'Cursor',
-  gemini_local:      'Gemini',
-  openclaw_gateway:  'OpenClaw',
-  opencode_local:    'OpenCode',
-  pi_local:          'Pi',
-};
-
-// APIベースかどうか
-const IS_API_TYPE = new Set(['claude_api', 'openclaw_gateway']);
-
-/** 稼働中スキルをtype別にグループ化して表示 */
-function ActiveSkillsByType({ agents }: { agents: Agent[] }) {
-  // type ごとに集計
-  const groups: Record<string, { count: number; isApi: boolean }> = {};
-  for (const a of agents) {
-    const typeKey = a.type ?? 'unknown';
-    if (!groups[typeKey]) {
-      groups[typeKey] = { count: 0, isApi: IS_API_TYPE.has(typeKey) };
-    }
-    groups[typeKey].count++;
-  }
-  const entries = Object.entries(groups).sort((a, b) => b[1].count - a[1].count);
-
-  return (
-    <div className="space-y-2">
-      {entries.map(([typeKey, { count, isApi }]) => (
-        <div key={typeKey} className="flex items-center gap-2">
-          <span className="text-xs text-th-text flex-1 truncate">
-            {AGENT_TYPE_LABEL[typeKey] ?? typeKey}
-          </span>
-          <span className={`text-xs px-1.5 py-0.5 rounded-th-sm flex-shrink-0 whitespace-nowrap ${
-            isApi ? 'bg-th-accent-dim text-th-accent' : 'bg-th-surface-2 text-th-text-3'
-          }`}>
-            {isApi ? 'API' : 'サブスク'}
-          </span>
-          <span className="text-xs font-bold text-th-accent w-4 text-right flex-shrink-0">{count}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  icon,
-  detail,
-  to,
-}: {
-  label: string;
-  value: number | string;
-  icon: React.ReactNode;
-  detail: string;
-  color?: string;
-  to?: string;
-}) {
-  const content = (
-    <CardBody className="flex items-start justify-between gap-4 p-4">
-      <div className="min-w-0">
-        <p className="mb-1 text-sm font-medium text-th-text-3">{label}</p>
-        <p className="text-4xl font-bold gradient-text">
-          {value}
-        </p>
-        <p className="mt-2 text-xs text-th-text-4">{detail}</p>
-      </div>
-      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-th border border-th-border bg-th-surface-1 text-th-text-4">
-        {icon}
-      </span>
-    </CardBody>
+function CostSummary() {
+  const { t } = useTranslation();
+  const { data, isLoading } = useQuery<{ data: CostEvent[] }>(
+    'costs-30d',
+    () => api.get('/costs').then(r => r.data),
+    { staleTime: 10 * 60 * 1000, refetchInterval: 15 * 60 * 1000 },
   );
 
-  if (to) {
-    return (
-      <Link to={to} className="block">
-        <Card hoverable>{content}</Card>
-      </Link>
-    );
+  const events = data?.data ?? [];
+  const totalUsd = events.reduce((sum, e) => sum + parseFloat(e.cost_usd || '0'), 0);
+
+  const byModel: Record<string, number> = {};
+  for (const e of events) {
+    byModel[e.model] = (byModel[e.model] ?? 0) + parseFloat(e.cost_usd || '0');
   }
-
-  return <Card hoverable>{content}</Card>;
-}
-
-interface Job {
-  id: string;
-  prompt: string;
-  status: string;
-  result: string | null;
-  error_message: string | null;
-  created_at: string;
-}
-
-function JobPanel() {
-  const [prompt, setPrompt] = useState('');
-  const [sending, setSending] = useState(false);
-  const [jobError, setJobError] = useState<string | null>(null);
-  const queryClient = useQueryClient();
-
-  const { data: recentJobs = [] } = useQuery<Job[]>(
-    'jobs',
-    () => api.get('/jobs?limit=5').then(r => r.data.data),
-    { refetchInterval: 5000 },
-  );
-
-  const handleSend = async () => {
-    if (!prompt.trim() || sending) return;
-    setSending(true);
-    setJobError(null);
-    try {
-      await api.post('/jobs', { prompt: prompt.trim() });
-      setPrompt('');
-      queryClient.invalidateQueries('jobs');
-    } catch {
-      setJobError('指示の送信に失敗しました。再度お試しください。');
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const handleStop = async (jobId: string) => {
-    try {
-      await api.patch(`/jobs/${jobId}`, { status: 'cancelled' });
-      queryClient.invalidateQueries('jobs');
-    } catch {
-      setJobError('ジョブの停止に失敗しました。');
-    }
-  };
-
-  const activeJob = recentJobs.find(j => j.status === 'pending' || j.status === 'running');
+  const topModels = Object.entries(byModel).sort((a, b) => b[1] - a[1]).slice(0, 4);
 
   return (
     <Card>
-      <CardBody className="p-4 space-y-4">
-        <h2 className="text-lg font-bold text-th-text">Claudeに指示</h2>
-
-        {jobError && <Alert variant="danger" message={jobError} onClose={() => setJobError(null)} />}
-
-        {/* 入力 */}
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleSend(); }}
-            placeholder="指示を入力..."
-            disabled={sending || !!activeJob}
-            className="flex-1 bg-th-surface-1 border border-th-border rounded-th-md px-3 py-2 text-sm text-th-text placeholder-th-text-4 focus:outline-none focus:border-th-accent disabled:opacity-50"
-          />
-          {activeJob ? (
-            <button
-              onClick={() => handleStop(activeJob.id)}
-              className="shrink-0 inline-flex items-center gap-1.5 rounded-th-md border border-th-danger/30 bg-th-danger-dim px-4 py-2 text-sm font-medium text-th-danger hover:opacity-80 transition-colors"
-            >
-              <Square className="h-3.5 w-3.5" />
-              停止
-            </button>
-          ) : (
-            <button
-              onClick={handleSend}
-              disabled={!prompt.trim() || sending}
-              className="shrink-0 inline-flex items-center gap-1.5 rounded-th-md border border-th-accent/30 bg-th-accent-dim px-4 py-2 text-sm font-medium text-th-accent hover:opacity-80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-              送信
-            </button>
-          )}
+      <CardBody className="p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold text-th-text flex items-center gap-2">
+            <Clock className="h-4 w-4 text-th-text-3" />
+            {t('dashboard.last30DaysCost')}
+          </h2>
+          <Link to="/costs" className="flex items-center gap-1 text-[11px] text-th-accent hover:opacity-80 transition-opacity">
+            {t('dashboard.costDetail')} <ChevronRight className="h-3 w-3" />
+          </Link>
         </div>
 
-        {/* 直近のジョブ */}
-        {recentJobs.length > 0 && (
+        {isLoading ? (
           <div className="space-y-2">
-            {recentJobs.slice(0, 3).map(job => (
-              <div key={job.id} className="rounded-th-md border border-th-border bg-th-surface-1 px-3 py-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm text-th-text-2 truncate flex-1">{job.prompt}</p>
-                  <span className={clsx(
-                    'shrink-0 text-[10px] font-medium rounded-full px-2 py-0.5',
-                    job.status === 'done' && 'bg-th-success-dim text-th-success',
-                    job.status === 'running' && 'bg-th-accent-dim text-th-accent',
-                    job.status === 'pending' && 'bg-th-warning-dim text-th-warning',
-                    job.status === 'error' && 'bg-th-danger-dim text-th-danger',
-                    job.status === 'cancelled' && 'bg-th-surface-2 text-th-text-4',
-                  )}>
-                    {job.status === 'running' && <Loader2 className="h-3 w-3 animate-spin inline mr-1" />}
-                    {job.status}
-                  </span>
-                </div>
-                {job.result && (
-                  <div className="mt-2 rounded-th-sm bg-th-surface-0 border border-th-border px-2.5 py-2">
-                    <p className="text-xs text-th-text-3 whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto">{job.result}</p>
-                  </div>
-                )}
-                {job.error_message && (
-                  <p className="mt-1 text-xs text-th-danger">{job.error_message}</p>
-                )}
-              </div>
-            ))}
+            <div className="h-8 rounded bg-th-surface-1 animate-pulse" />
+            <div className="h-16 rounded bg-th-surface-1 animate-pulse" />
           </div>
+        ) : (
+          <>
+            <div className="mb-4">
+              <p className="text-[11px] text-th-text-4 mb-1">{t('dashboard.last30DaysTotal')}</p>
+              <p className="text-3xl font-bold gradient-text">${totalUsd.toFixed(4)}</p>
+            </div>
+
+            {topModels.length > 0 ? (
+              <div className="space-y-2">
+                {topModels.map(([model, cost]) => (
+                  <div key={model} className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-th-text-3 truncate flex-1" title={model}>
+                      {model.replace('claude-', '').replace(/-\d{8}$/, '')}
+                    </span>
+                    <span className="text-xs font-medium text-th-text flex-shrink-0">
+                      ${cost.toFixed(4)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-th-text-4 text-center py-4">{t('dashboard.noCostRecords')}</p>
+            )}
+          </>
         )}
       </CardBody>
     </Card>
   );
 }
 
-interface AnalyticsOverview {
-  active_agents: number;
-  open_issues: number;
-  today_sessions: number;
-  total_skills: number;
+// ─── セッションテーブル ───────────────────────────────────────────────────────
+
+function SessionsTable() {
+  const { t } = useTranslation();
+  const { data, isLoading } = useQuery<AnalyticsSessions>(
+    ['analytics-sessions-table', '7d'],
+    () => api.get('/analytics/sessions?period=7d').then(r => r.data),
+    { staleTime: 5 * 60 * 1000, refetchInterval: 10 * 60 * 1000 },
+  );
+
+  const sessions = data?.data ?? [];
+  const meta = data?.meta;
+
+  return (
+    <Card>
+      {/* テーブルヘッダー */}
+      <div className="px-5 py-3.5 border-b border-th-border flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold text-th-text">{t('dashboard.liveActivity')}</h2>
+          {meta && (
+            <span className="text-[11px] text-th-text-4">
+              7d · {meta.total_sessions}{t('common.noData').includes('data') ? '' : '件'}
+            </span>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <Link
+            to="/sessions"
+            className="text-[12px] text-th-text-3 hover:text-th-accent px-2 py-1 rounded border border-th-border hover:border-th-accent/30 transition-all flex items-center gap-1"
+          >
+            {t('dashboard.viewAll')} <ChevronRight className="h-3 w-3" />
+          </Link>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="p-5 space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-10 rounded bg-th-surface-1 animate-pulse" />
+          ))}
+        </div>
+      ) : sessions.length === 0 ? (
+        <p className="text-xs text-th-text-4 text-center py-10">{t('dashboard.noSessions')}</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm whitespace-nowrap">
+            <thead className="text-[10px] uppercase text-th-text-4 font-bold tracking-wider border-b border-th-border bg-th-surface-1">
+              <tr>
+                <th className="px-5 py-3 font-medium">Session ID</th>
+                <th className="px-5 py-3 font-medium">{t('dashboard.noTitle').replace('（', '').replace('）', '') === 'No title' ? 'Objective' : '内容'}</th>
+                <th className="px-5 py-3 font-medium">{t('common.status')}</th>
+                <th className="px-5 py-3 font-medium text-right">Time</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-th-border text-[13px]">
+              {sessions.slice(0, 8).map((s) => {
+                const filesCount = Array.isArray(s.changed_files) ? s.changed_files.length : 0;
+                return (
+                  <tr
+                    key={s.id}
+                    className="hover:bg-th-surface-1 transition-colors group cursor-pointer"
+                  >
+                    <td className="px-5 py-3">
+                      <Link to={`/sessions/${s.id}`} className="font-mono text-[11px] text-th-text-4 hover:text-th-accent transition-colors">
+                        {s.id.slice(0, 8)}…
+                      </Link>
+                    </td>
+                    <td className="px-5 py-3 max-w-xs">
+                      <Link to={`/sessions/${s.id}`} className="text-th-text-2 group-hover:text-th-text transition-colors truncate block">
+                        {s.headline ?? t('dashboard.noTitle')}
+                      </Link>
+                      {filesCount > 0 && (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-th-text-4 mt-0.5">
+                          <FileCode className="h-2.5 w-2.5" />
+                          {t('dashboard.filesChanged', { count: filesCount })}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3">
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] bg-th-success-dim text-th-success border border-th-success/20">
+                        <CheckCircle2 className="h-3 w-3" />
+                        {t('dashboard.statusDone')}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-th-text-4 text-[11px] text-right">
+                      {relativeTime(s.session_ended_at, t)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* フッター */}
+      {sessions.length > 0 && (
+        <div className="px-5 py-3 border-t border-th-border flex justify-between items-center text-xs text-th-text-4">
+          <span>{meta ? `${meta.total_sessions}件 (7日間)` : ''}</span>
+          <Link to="/sessions" className="hover:text-th-accent transition-colors">
+            {t('dashboard.viewAll')} →
+          </Link>
+        </div>
+      )}
+    </Card>
+  );
 }
+
+// ─── ページ本体 ───────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
   const { t } = useTranslation();
 
-  // D-1修正: 存在しないエンドポイントを廃止し、既存APIを個別に呼び出す
-  // D-3修正: r.data → r.data.data
-
-  // 稼働中エージェント数
-  const { data: agents, isLoading: agentsLoading, error: agentsError } = useQuery<Agent[]>(
-    'agents',
-    () => api.get('/agents').then((r) => r.data.data),
-  );
-
-  // 未完了Issue数
-  const { data: issues, isLoading: issuesLoading, error: issuesError } = useQuery<Issue[]>(
-    'issues',
-    () => api.get('/issues').then((r) => r.data.data),
-  );
-
-  // 最近のアクティビティ（直近5件）
-  const { data: activities, isLoading: activitiesLoading, error: activitiesError } = useQuery<ActivityLog[]>(
-    'activity',
-    () => api.get('/activity', { params: { limit: 5 } }).then((r) => r.data.data),
-  );
-
-  // ダッシュボード概要（本日セッション数・登録スキル数）
-  const { data: overview } = useQuery<AnalyticsOverview>(
+  const { data: overview, isLoading: overviewLoading, error: overviewError } = useQuery<{ data: AnalyticsOverview }>(
     'analytics-overview',
-    () => api.get('/analytics/overview').then((r) => r.data.data),
-    { refetchInterval: 5 * 60 * 1000, staleTime: 2 * 60 * 1000 },
+    () => api.get('/analytics/overview').then(r => r.data),
+    { refetchInterval: 3 * 60 * 1000, staleTime: 2 * 60 * 1000 },
   );
 
-  // D-5修正: enabled === true のエージェント数をカウント
-  const agentCount = (agents ?? []).filter((a) => a.enabled).length;
+  const { data: costsData } = useQuery<{ data: CostEvent[] }>(
+    'costs-30d-overview',
+    () => api.get('/costs').then(r => r.data),
+    { staleTime: 10 * 60 * 1000, refetchInterval: 15 * 60 * 1000 },
+  );
 
-  // D-6修正: status !== 'done' の未完了Issue数をカウント
-  const openIssues = (issues ?? []).filter((i) => i.status !== 'done').length;
+  const stats = overview?.data;
+  const totalCost = (costsData?.data ?? []).reduce((sum, e) => sum + parseFloat(e.cost_usd || '0'), 0);
 
-  const isLoading = agentsLoading || issuesLoading || activitiesLoading;
-  const hasError = agentsError || issuesError || activitiesError;
+  const today = new Date().toLocaleDateString(undefined, {
+    weekday: 'long', month: 'long', day: 'numeric',
+  });
 
-  if (isLoading)
+  if (overviewLoading) {
     return (
-      <div className="p-6 space-y-6 max-w-7xl mx-auto">
-        <div className="space-y-2">
-          <h1 className="text-4xl font-bold gradient-text">
-            {t('dashboard.title')}
-          </h1>
-          <p className="max-w-2xl text-th-text-3">
-            {t('dashboard.subtitle')}
-          </p>
+      <div className="p-6 max-w-7xl mx-auto">
+        <div className="space-y-2 mb-6">
+          <h1 className="text-3xl font-bold gradient-text">{t('dashboard.title')}</h1>
+          <p className="text-th-text-3 text-sm">{t('dashboard.subtitle')}</p>
         </div>
-
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <Card key={index}>
-              <CardBody className="space-y-3 p-4">
-                <div className="h-4 w-24 rounded-th-sm bg-th-surface-2" />
-                <div className="h-10 w-16 rounded-th-sm bg-th-surface-1" />
-                <div className="h-3 w-32 rounded-th-sm bg-th-surface-1" />
-              </CardBody>
-            </Card>
-          ))}
+        <div className="flex items-center justify-center h-40">
+          <LoadingSpinner text={t('dashboard.loading')} />
         </div>
-
-        <Card>
-          <CardBody className="py-16">
-            <LoadingSpinner text={t('dashboard.loading')} />
-          </CardBody>
-        </Card>
       </div>
     );
+  }
 
-  if (hasError)
+  if (overviewError) {
     return (
-      <div className="p-6 space-y-6 max-w-7xl mx-auto">
-        <div className="space-y-2">
-          <h1 className="text-4xl font-bold gradient-text">
-            {t('dashboard.title')}
-          </h1>
-          <p className="max-w-2xl text-th-text-3">
-            {t('dashboard.subtitle')}
-          </p>
+      <div className="p-6 max-w-7xl mx-auto">
+        <div className="space-y-2 mb-6">
+          <h1 className="text-3xl font-bold gradient-text">{t('dashboard.title')}</h1>
         </div>
-
-        <Card>
-          <CardBody className="space-y-4 p-6">
-            <Alert
-              variant="danger"
-              title={t('dashboard.loadFailed')}
-              message={t('dashboard.loadFailedMessage')}
-            />
-            <p className="text-sm text-th-text-4">
-              {t('dashboard.loadFailedScope')}
-            </p>
-          </CardBody>
-        </Card>
+        <Alert variant="danger" title={t('dashboard.loadFailed')} message={t('dashboard.loadFailedMessage')} />
       </div>
     );
+  }
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
-      <div className="space-y-2">
-        <h1 className="text-4xl font-bold gradient-text">
-          {t('dashboard.title')}
-        </h1>
-        <p className="max-w-2xl text-th-text-3">
-          {t('dashboard.subtitle')}
-        </p>
+    <div className="p-6 space-y-5 max-w-7xl mx-auto">
+      {/* ページヘッダー */}
+      <div className="space-y-1">
+        <h1 className="text-3xl font-bold gradient-text">{t('dashboard.title')}</h1>
+        <p className="text-sm text-th-text-4">{today}</p>
       </div>
 
-      {/* 統計カード */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* 稼働中スキル: 部署別グループ表示 */}
-        <div className="bg-th-surface-1 rounded-th p-4 border border-th-border flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-th-text-3">稼働中のスキル</span>
-            <span className="bg-th-surface-2 rounded-full p-1.5 text-th-text-3"><Bot className="h-4 w-4" /></span>
-          </div>
-          {agentCount === 0 ? (
-            <p className="text-xs text-th-text-4">稼働中のスキルなし</p>
-          ) : (
-            <ActiveSkillsByType agents={(agents ?? []).filter(a => a.enabled)} />
-          )}
+      {/* メトリクスカード × 4 */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <MetricCard
+          label={t('dashboard.activeAgents')}
+          value={stats?.active_agents ?? '—'}
+          icon={<Bot className="h-4 w-4" />}
+          to="/agents"
+          barPercent={Math.min(100, (stats?.active_agents ?? 0) * 10)}
+          barColor="bg-th-success"
+        />
+        <MetricCard
+          label={t('dashboard.todaySessions')}
+          value={stats?.today_sessions ?? '—'}
+          icon={<Clock className="h-4 w-4" />}
+          to="/sessions"
+        />
+        <MetricCard
+          label={t('dashboard.last30DaysCost')}
+          value={`$${totalCost.toFixed(2)}`}
+          icon={<TrendingUp className="h-4 w-4" />}
+          to="/costs"
+        />
+        <MetricCard
+          label={t('dashboard.totalAgents')}
+          value={stats?.total_skills ?? '—'}
+          icon={<Zap className="h-4 w-4" />}
+          to="/plugins"
+          barPercent={75}
+        />
+      </div>
+
+      {/* メインエリア: アクティビティ + ジョブキュー */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="lg:col-span-2">
+          <ActivityFeed />
         </div>
-        <StatCard
-          label={t('dashboard.incompleteIssues')}
-          value={openIssues}
-          icon={<ClipboardList className="h-5 w-5" />}
-          detail={t('dashboard.incompleteIssuesDetail')}
-          color="orange"
-          to="/issues"
-        />
-        <StatCard
-          label="本日のセッション"
-          value={overview?.today_sessions ?? '-'}
-          icon={<Activity className="h-5 w-5" />}
-          detail="今日の作業セッション数"
-        />
-        <StatCard
-          label="登録スキル数"
-          value={overview?.total_skills ?? '-'}
-          icon={<Zap className="h-5 w-5" />}
-          detail="利用可能なスキル総数"
-          to="/skills"
-        />
+        <div>
+          <JobQueue />
+        </div>
       </div>
 
-      {/* Claudeに指示 */}
-      <JobPanel />
-
-      {/* スキル使用頻度 Top10 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <SkillUsageChart period="24h" />
-        <SkillUsageChart period="7d" />
+      {/* ボトムエリア: スキル使用 + コスト概要 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <SkillUsageChart />
+        <CostSummary />
       </div>
 
-      {/* 最近のアクティビティ */}
-      <Card>
-        <CardHeader>
-          <h2 className="text-xl font-bold text-th-text">{t('dashboard.recentActivity')}</h2>
-        </CardHeader>
-        <CardBody>
-          {(activities ?? []).length > 0 ? (
-            <div className="space-y-3">
-              {(activities ?? []).slice(0, 5).map((activity) => (
-                <div
-                  key={activity.id}
-                  className="flex items-center gap-3 rounded-th-md p-3 transition-colors hover:bg-th-surface-1"
-                >
-                  <span className={`flex-shrink-0 inline-block min-w-[3rem] text-center px-2 py-0.5 rounded-th-sm text-xs font-medium whitespace-nowrap ${ACTION_STYLE[activity.action] ?? 'bg-th-surface-2 text-th-text-2'}`}>
-                    {ACTION_LABEL[activity.action] ?? activity.action}
-                  </span>
-                  <span className="text-sm text-th-text flex-1 min-w-0 truncate">
-                    {formatActivityMessage(activity)}
-                  </span>
-                  <span className="text-xs text-th-text-4 flex-shrink-0">{formatDate(activity.created_at)}</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <EmptyState
-              icon={<Activity className="h-10 w-10" />}
-              title={t('dashboard.noActivityTitle')}
-              description={t('dashboard.noActivityDescription')}
-            />
-          )}
-        </CardBody>
-      </Card>
-
+      {/* セッションテーブル */}
+      <SessionsTable />
     </div>
   );
 }

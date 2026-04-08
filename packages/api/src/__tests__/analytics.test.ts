@@ -46,8 +46,10 @@ describe('GET /api/analytics/skills', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
   it('UT-A01: 200とスキル一覧を返す', async () => {
+    // analytics/skills の select は { name, count } のみ取得（count = plugins.usage_count のエイリアス）
+    // count > 0 のアイテムのみ返すフィルタがある
     const mockPlugins = [
-      { id: 'p-001', name: 'git-helper', category: 'dev', usage_count: 10, last_used_at: null, enabled: true },
+      { name: 'git-helper', count: 10 },
     ];
     vi.mocked(getDb).mockReturnValue({
       select: vi.fn().mockReturnValue({
@@ -220,11 +222,10 @@ describe('GET /api/analytics/overview', () => {
 
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('UT-A08: 200と4つのメトリクスを返す', async () => {
-    // Promise.all で4クエリが並行実行される
+  it('UT-A08: 200と3つのメトリクスを返す', async () => {
+    // Promise.all で3クエリが並行実行される
     const selectFn = vi.fn()
       .mockReturnValueOnce(buildCountChain(3))  // active_agents
-      .mockReturnValueOnce(buildCountChain(7))  // open_issues
       .mockReturnValueOnce(buildCountChain(2))  // today_sessions
       .mockReturnValueOnce(buildCountChain(10)); // total_skills
 
@@ -236,14 +237,12 @@ describe('GET /api/analytics/overview', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.data.active_agents).toBe(3);
-    expect(res.body.data.open_issues).toBe(7);
     expect(res.body.data.today_sessions).toBe(2);
     expect(res.body.data.total_skills).toBe(10);
   });
 
   it('UT-A09: DB が空の場合 0 を返す', async () => {
     const selectFn = vi.fn()
-      .mockReturnValueOnce(buildCountChain(0))
       .mockReturnValueOnce(buildCountChain(0))
       .mockReturnValueOnce(buildCountChain(0))
       .mockReturnValueOnce(buildCountChain(0));
@@ -256,6 +255,6 @@ describe('GET /api/analytics/overview', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.data.active_agents).toBe(0);
-    expect(res.body.data.open_issues).toBe(0);
+    expect(res.body.data.today_sessions).toBe(0);
   });
 });

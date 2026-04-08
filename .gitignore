@@ -26,3 +26,9 @@ claudecodex/
 # ローカルテスト用一時ファイル
 test_group_*.mjs
 test_output.log
+
+# E2Eテスト成果物（ローカルのみ）
+test-results-e2e/
+playwright-report-e2e/
+packages/ui/playwright-report/
+e2e/test-results/

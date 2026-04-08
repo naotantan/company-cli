@@ -51,6 +51,25 @@ recipesRouter.get('/:id', async (req, res, next) => {
   }
 });
 
+/**
+ * ステップのinstructionを正規化する。
+ * step_type が 'skill' の場合、instructionが /skill-name で始まっていなければ自動的に付与する。
+ * step_type が 'command' の場合はそのまま。
+ */
+function normalizeStepInstruction(
+  instruction: string,
+  skill: string | null | undefined,
+  stepType: 'skill' | 'command' | undefined,
+): string {
+  if (stepType === 'skill' && skill) {
+    const prefix = `/${skill}`;
+    if (!instruction.trimStart().startsWith(prefix)) {
+      return `${prefix} ${instruction.trimStart()}`;
+    }
+  }
+  return instruction;
+}
+
 // POST /api/recipes — レシピ作成（ステップ含む）
 recipesRouter.post('/', async (req, res, next) => {
   try {
@@ -62,6 +81,7 @@ recipesRouter.post('/', async (req, res, next) => {
         order: number;
         phase_label: string;
         skill?: string;
+        step_type?: 'skill' | 'command';
         instruction: string;
         note?: string;
       }>;
@@ -87,7 +107,7 @@ recipesRouter.post('/', async (req, res, next) => {
           order: s.order ?? i + 1,
           phase_label: sanitizeString(s.phase_label),
           skill: s.skill ? sanitizeString(s.skill) : null,
-          instruction: s.instruction,
+          instruction: normalizeStepInstruction(s.instruction, s.skill, s.step_type),
           note: s.note || null,
         }))
       );
@@ -181,9 +201,9 @@ recipesRouter.post('/seed', async (req, res, next) => {
       { order: 2, phase_label: 'Phase 1: 設計', skill: 'sequential-thinking', instruction: 'sequential-thinking で設計を検討。PRD・アーキテクチャ・システム設計・技術仕様・タスクリストを生成してから実装に入る。', note: '複雑な機能はplanner agentも活用' },
       { order: 3, phase_label: 'Phase 2: DB設計', skill: 'supabase', instruction: 'Drizzle ORMでスキーマ定義 → マイグレーション生成 → 適用。テーブル設計はsupabaseのベストプラクティスに従う。', note: 'group-*.tsのパターンを参照' },
       { order: 4, phase_label: 'Phase 3: API実装', skill: 'context7', instruction: 'context7 で使用ライブラリの最新ドキュメントを取得してからAPIルートを実装。エラーハンドリング・バリデーション・レート制限を必ず含める。', note: 'memoriesRouterのパターンを参考に' },
-      { order: 5, phase_label: 'Phase 4: テスト', skill: 'tdd-guide', instruction: 'tdd-guideでテスト駆動開発。APIインテグレーションテスト・ユニットテストを先に書いてからE2Eテストを追加。カバレッジ80%以上を目標。', note: 'Red→Green→Refactorのサイクルで進める' },
-      { order: 6, phase_label: 'Phase 5: UI実装', skill: 'awesome-design-md', instruction: 'awesome-design-mdのStripeデザインシステムを参考にReactコンポーネントを実装。TanStack Queryでデータ取得、楽観的更新を活用する。', note: 'デザインはStripeスタイル（Inter/weight300/--purple #533afd）に統一' },
-      { order: 7, phase_label: 'Phase 6: レビュー', skill: 'code-reviewer', instruction: 'code-reviewerでコード品質を確認。security-reviewerでセキュリティチェック。TypeScript型エラーなし・ビルド成功を確認してからcommit/PR作成。', note: 'CRITICALとHIGH問題はマージ前に必ず修正' },
+      { order: 5, phase_label: 'Phase 4: テスト', skill: 'tdd-guide', instruction: '/tdd-guide APIインテグレーションテスト・ユニットテストを先に書いてからE2Eテストを追加する。カバレッジ80%以上を目標。', note: 'Red→Green→Refactorのサイクルで進める' },
+      { order: 6, phase_label: 'Phase 5: UI実装', skill: 'awesome-design-md', instruction: '/awesome-design-md Stripe のデザインシステムを参考に React コンポーネントを実装する。TanStack Query でデータ取得し、楽観的更新を活用する。', note: 'デザインはStripeスタイル（Inter/weight300/--purple #533afd）に統一' },
+      { order: 7, phase_label: 'Phase 6: レビュー', skill: 'code-reviewer', instruction: '/code-reviewer でコード品質を確認。/security-reviewer でセキュリティチェック。TypeScript型エラーなし・ビルド成功を確認してから commit/PR を作成する。', note: 'CRITICALとHIGH問題はマージ前に必ず修正' },
     ];
 
     await db.insert(recipe_steps).values(

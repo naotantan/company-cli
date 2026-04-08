@@ -1,5 +1,5 @@
 import { Router, type Router as RouterType } from 'express';
-import { getDb, plugins, plugin_jobs, plugin_job_runs, plugin_webhooks, companies } from '@maestro/db';
+import { getDb, plugins, plugin_jobs, plugin_job_runs, plugin_webhooks, plugin_usage_events, companies } from '@maestro/db';
 import { eq, and, sql, gte, desc, inArray } from 'drizzle-orm';
 import { promises as dns } from 'dns';
 import { isIP } from 'net';
@@ -9,45 +9,168 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { sanitizeString } from '../middleware/validate';
 
+/** プラグイン登録・更新後にバックグラウンドでembeddingを生成する */
+async function schedulePluginEmbedding(pluginId: string, plugin: { name: string; description?: string | null; usage_content?: string | null; category?: string | null }): Promise<void> {
+  try {
+    const { embedPassage, buildPluginEmbedText } = await import('../services/embedding.js');
+    const vec = await embedPassage(buildPluginEmbedText(plugin));
+    const db = getDb();
+    await db.execute(sql`UPDATE plugins SET embedding = ${`[${vec.join(',')}]`}::vector WHERE id = ${pluginId}`);
+  } catch { /* embedding失敗は無視 */ }
+}
+
+/**
+ * キーワードベースの高速カテゴリ分類（Ollama不使用）
+ * スキル名・説明文のキーワードでカテゴリを推定する
+ */
+function guessCategoryByKeyword(name: string, description: string): string {
+  const text = (name + ' ' + description).toLowerCase();
+  if (/\bai\b|agent|llm|claude|gpt|ollama|model|embed|vector|rag|anthropic|openai/.test(text)) return 'AI・エージェント';
+  if (/react|vue|angular|frontend|front.end|css|html|tailwind|ui\b|component|svelte|next\.?js|remix/.test(text)) return 'フロントエンド';
+  if (/\bapi\b|backend|back.end|express|fastapi|django|flask|server|rest\b|graphql|endpoint|hono/.test(text)) return 'バックエンド・API';
+  if (/sql|database|postgres|mysql|mongo|redis|supabase|\bdb\b|query|schema|drizzle|prisma/.test(text)) return 'データベース';
+  if (/test|jest|playwright|vitest|spec|coverage|e2e|unit.test|assert|cypress/.test(text)) return 'テスト・品質';
+  if (/docker|k8s|kubernetes|\bci\b|\bcd\b|deploy|terraform|aws|gcp|azure|infra|github.action|devops/.test(text)) return 'DevOps・インフラ';
+  if (/security|auth|oauth|jwt|encrypt|crypto|ssl|permission|vulnerability|csrf|xss|owasp/.test(text)) return 'セキュリティ';
+  if (/content|blog|seo|marketing|copy.?writ|article|social.media/.test(text)) return 'コンテンツ・マーケティング';
+  if (/git\b|github|commit|\bpr\b|review|workflow|task|todo|plan|hook|refactor|format|lint/.test(text)) return 'ワークフロー・ツール';
+  if (/python|typescript|javascript|\bgo\b|golang|rust|java\b|kotlin|swift|\bphp\b|ruby|lang|framework/.test(text)) return '言語・フレームワーク';
+  return 'その他';
+}
+
 /**
  * スキル名+説明をもとにカテゴリを一括割り当てする。
- * claude -p CLI を使用。失敗時は 'その他' を返す。
+ * Ollama (Qwen3:14b) を使用。失敗時は 'その他' を返す。
  */
-async function categorizeSkills(
+async function categorizeSkillsWithOllama(
   skills: { name: string; description: string }[]
 ): Promise<string[]> {
   if (skills.length === 0) return [];
+  const { categorizeSkillsWithOllama: ollamaCategorize } = await import('../services/ollama.js');
+  return ollamaCategorize(skills, SKILL_CATEGORIES, 'その他');
+}
 
-  const categories = SKILL_CATEGORIES.join(', ');
-  const input = JSON.stringify(skills.map((s) => ({ name: s.name, description: s.description.slice(0, 200) })));
-  const prompt =
-    `以下のスキル一覧を、次のカテゴリのいずれかに分類してください: ${categories}\n` +
-    `入力と同じ順番で、カテゴリ名だけのJSON配列を返してください。他のテキストは不要です。\n\n${input}`;
-
+/**
+ * バックグラウンドで翻訳・Ollamaカテゴリ精度向上を行う（レスポンス後に実行）
+ * フロントマターにカテゴリがなかったスキルをOllamaで正確に再分類する。
+ * 翻訳も行う。処理はバッチ分割するのでタイムアウトしない。
+ */
+export async function refineSyncInBackground(
+  companyId: string,
+  companyLang: string,
+  skillIds: { id: string; name: string; description: string; usageContent: string | null }[]
+): Promise<void> {
+  if (skillIds.length === 0) return;
   try {
-    const { stdout } = await execFileAsync('claude', ['-p', prompt], {
-      timeout: 120000,
-      maxBuffer: 2 * 1024 * 1024,
-    });
-    const match = stdout.trim().match(/\[[\s\S]*\]/);
-    if (!match) return skills.map(() => 'その他');
-    const parsed: unknown = JSON.parse(match[0]);
-    if (Array.isArray(parsed) && parsed.length === skills.length) {
-      return parsed.map((v) =>
-        typeof v === 'string' && (SKILL_CATEGORIES as readonly string[]).includes(v) ? v : 'その他'
-      );
+    const db = getDb();
+    const { translateTexts, translateUsageContent, categorizeSkillsWithOllama: ollamaCategorize } = await import('../services/ollama.js');
+
+    // Ollamaカテゴリ分類（30スキル/バッチ）
+    console.log(`[bg-refine] 開始: ${skillIds.length}件`);
+    const CHUNK = 30;
+    for (let i = 0; i < skillIds.length; i += CHUNK) {
+      const chunk = skillIds.slice(i, i + CHUNK);
+      console.log(`[bg-refine] カテゴリ分類: ${i + 1}〜${Math.min(i + CHUNK, skillIds.length)}件目`);
+      try {
+        const refined = await ollamaCategorize(
+          chunk.map((s) => ({ name: s.name, description: s.description })),
+          SKILL_CATEGORIES,
+          'その他',
+        );
+        for (let j = 0; j < chunk.length; j++) {
+          if (refined[j]) {
+            await db.execute(sql`UPDATE plugins SET category = ${refined[j]} WHERE id = ${chunk[j].id}`);
+          }
+        }
+      } catch {
+        // このチャンクの分類失敗は無視して次へ
+      }
     }
-    return skills.map(() => 'その他');
+
+    if (companyLang !== 'en') {
+      // description翻訳（20件/バッチ）
+      const TRANS_CHUNK = 20;
+      for (let i = 0; i < skillIds.length; i += TRANS_CHUNK) {
+        const chunk = skillIds.slice(i, i + TRANS_CHUNK);
+        try {
+          const translated = await translateTexts(chunk.map((s) => s.description), companyLang);
+          for (let j = 0; j < chunk.length; j++) {
+            if (translated[j] && translated[j] !== chunk[j].description) {
+              await db.execute(sql`
+                UPDATE plugins SET description_translated = ${translated[j]}, translation_lang = ${companyLang}
+                WHERE id = ${chunk[j].id} AND description_translated IS NULL
+              `);
+            }
+          }
+        } catch {
+          // このチャンクの翻訳失敗は無視して次へ
+        }
+      }
+
+      // usage_examples翻訳（20件/バッチ — 各スキルの例文配列をまとめて翻訳）
+      // DBから usage_examples を取得して翻訳
+      for (let i = 0; i < skillIds.length; i += TRANS_CHUNK) {
+        const chunk = skillIds.slice(i, i + TRANS_CHUNK);
+        try {
+          const rows = await db.execute(sql`
+            SELECT id, usage_examples FROM plugins
+            WHERE id = ANY(ARRAY[${sql.raw(chunk.map(s => `'${s.id}'`).join(','))}]::uuid[])
+            AND usage_examples IS NOT NULL AND usage_examples_translated IS NULL
+          `);
+          for (const row of rows.rows as { id: string; usage_examples: string }[]) {
+            try {
+              const examples: string[] = JSON.parse(row.usage_examples);
+              if (!examples.length) continue;
+              const translated = await translateTexts(examples, companyLang);
+              await db.execute(sql`
+                UPDATE plugins SET usage_examples_translated = ${JSON.stringify(translated)}
+                WHERE id = ${row.id}
+              `);
+            } catch {
+              // 1件失敗しても次へ
+            }
+          }
+        } catch {
+          // このチャンク失敗は無視
+        }
+      }
+
+      // usage_content翻訳（長文のため1件ずつ）
+      for (const skill of skillIds) {
+        if (!skill.usageContent) continue;
+        try {
+          const translated = await translateUsageContent(skill.usageContent, companyLang);
+          if (translated) {
+            await db.execute(sql`
+              UPDATE plugins SET usage_content_translated = ${translated}
+              WHERE id = ${skill.id} AND usage_content_translated IS NULL
+            `);
+          }
+        } catch {
+          // 1件失敗しても次へ継続
+        }
+      }
+    }
+    // 全バッチ完了後にモデルをアンロードしてメモリを解放
+    try {
+      const { unloadModel } = await import('../services/ollama.js');
+      await unloadModel();
+    } catch { /* アンロード失敗は無視 */ }
   } catch {
-    return skills.map(() => 'その他');
+    // バックグラウンド処理全体の失敗は無視
   }
 }
 
 /** 説明文のサニタイズ（HTMLエスケープなし・トリムのみ）
  * Reactが自動エスケープするためDBにHTMLエスケープは不要 */
+/** YAML ブロックスカラー記号（説明として無意味な値）の一覧 */
+const YAML_BLOCK_SCALARS = new Set(['|', '|-', '|+', '>', '>-', '>+']);
+
 function sanitizeDesc(input: string | undefined | null): string | undefined {
   if (!input) return undefined;
-  return input.trim().slice(0, 10000);
+  const trimmed = input.trim();
+  if (!trimmed || YAML_BLOCK_SCALARS.has(trimmed)) return undefined;
+  return trimmed.slice(0, 10000);
 }
 
 const execFileAsync = promisify(execFile);
@@ -271,71 +394,16 @@ function getLangDisplayName(lang: string): string {
 }
 
 /**
- * Anthropic API を直接呼び出して descriptions を targetLang に一括翻訳する。
- * apiKey が未設定の場合は元の説明をそのまま返す。
+ * スキルの description を対象言語に一括翻訳する。
+ * Ollama (Qwen3:14b) を使用。失敗時は元のテキストをそのまま返す。
  */
 async function translateDescriptions(
   descriptions: string[],
   targetLang: string,
-  apiKey: string,
 ): Promise<string[]> {
   if (targetLang === 'en' || descriptions.length === 0) return descriptions;
-  if (!apiKey) return descriptions;
-
-  const langName = getLangDisplayName(targetLang);
-
-  // 50件ずつに分割してレート制限を回避
-  const CHUNK = 50;
-  const result: string[] = [];
-
-  for (let i = 0; i < descriptions.length; i += CHUNK) {
-    const chunk = descriptions.slice(i, i + CHUNK);
-    const prompt =
-      `Translate each description in this JSON array to ${langName}. ` +
-      `Return a JSON array with the same number of elements, each being the translation. ` +
-      `Output ONLY the JSON array, no other text.\n\n${JSON.stringify(chunk)}`;
-
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 60000);
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 4096,
-          messages: [{ role: 'user', content: prompt }],
-        }),
-        signal: controller.signal,
-      });
-      clearTimeout(timer);
-
-      if (!res.ok) {
-        result.push(...chunk);
-        continue;
-      }
-
-      const json = await res.json() as { content?: Array<{ type: string; text: string }> };
-      const text = json.content?.find((c) => c.type === 'text')?.text?.trim() ?? '';
-      const match = text.match(/\[[\s\S]*\]/);
-      if (match) {
-        const parsed: unknown = JSON.parse(match[0]);
-        if (Array.isArray(parsed) && parsed.length === chunk.length) {
-          result.push(...parsed.map((v, idx) => (typeof v === 'string' ? v : chunk[idx])));
-          continue;
-        }
-      }
-      result.push(...chunk);
-    } catch {
-      result.push(...chunk);
-    }
-  }
-
-  return result;
+  const { translateTexts } = await import('../services/ollama.js');
+  return translateTexts(descriptions, targetLang);
 }
 
 /**
@@ -471,18 +539,23 @@ pluginsRouter.get('/', async (req, res, next) => {
       .limit(1);
     const companyLang = (companyRows[0]?.settings as Record<string, unknown> | null)?.language as string ?? 'ja';
 
-    const rows = await db
-      .select()
-      .from(plugins)
-      .where(eq(plugins.company_id, req.companyId!));
+    const rawRows = await db.execute(sql`
+      SELECT *, usage_content_translated FROM plugins
+      WHERE company_id = ${req.companyId!}
+    `);
+    const rows = rawRows.rows as (typeof plugins.$inferSelect & { usage_content_translated?: string | null })[];
 
-    // 言語に合った description を返す
+    // 言語に合ったフィールドを返す（翻訳済みのものがあれば優先）
     const data = rows.map((p) => ({
       ...p,
       description:
         p.translation_lang === companyLang && p.description_translated
           ? p.description_translated
           : p.description,
+      usage_content:
+        p.usage_content_translated
+          ? p.usage_content_translated
+          : p.usage_content,
     }));
 
     res.json({ data });
@@ -520,6 +593,32 @@ pluginsRouter.post('/', async (req, res, next) => {
     const db = getDb();
     const sanitizedDesc = sanitizeDesc(description);
 
+    // 重複スキル検知（embedding が利用可能な場合のみ）
+    let duplicateWarning: { id: string; name: string; similarity: number }[] | undefined;
+    try {
+      const { embedQuery, buildPluginEmbedText } = await import('../services/embedding.js');
+      const candidateText = buildPluginEmbedText({ name: sanitizeString(name), description: sanitizedDesc });
+      const vec = await embedQuery(candidateText);
+      const dupRows = await db.execute(sql`
+        SELECT id, name,
+          1 - (embedding <=> ${`[${vec.join(',')}]`}::vector) AS similarity
+        FROM plugins
+        WHERE company_id = ${req.companyId!}
+          AND enabled = true
+          AND embedding IS NOT NULL
+          AND 1 - (embedding <=> ${`[${vec.join(',')}]`}::vector) >= 0.90
+        ORDER BY embedding <=> ${`[${vec.join(',')}]`}::vector
+        LIMIT 3
+      `);
+      if (dupRows.rows.length > 0) {
+        duplicateWarning = dupRows.rows.map((r) => ({
+          id: r.id as string,
+          name: r.name as string,
+          similarity: Math.round(Number(r.similarity) * 100),
+        }));
+      }
+    } catch { /* embedding未初期化時は無視 */ }
+
     // 会社の言語設定を取得して翻訳
     const companyRows = await db
       .select({ settings: companies.settings })
@@ -532,7 +631,7 @@ pluginsRouter.post('/', async (req, res, next) => {
 
     let descTranslated: string | undefined;
     if (sanitizedDesc && companyLang !== 'en') {
-      const [translated] = await translateDescriptions([sanitizedDesc], companyLang, anthropicApiKey);
+      const [translated] = await translateDescriptions([sanitizedDesc], companyLang);
       if (translated !== sanitizedDesc) descTranslated = translated;
     }
 
@@ -561,7 +660,82 @@ pluginsRouter.post('/', async (req, res, next) => {
     const agentsDir = path.join(process.env.HOME || '/root', '.claude', 'agents');
     ensureAgentWrappers(agentsDir, skillsDir);
 
-    res.status(201).json({ data: newPlugin[0] });
+    res.status(201).json({
+      data: newPlugin[0],
+      ...(duplicateWarning && duplicateWarning.length > 0 && {
+        warning: {
+          code: 'possible_duplicates',
+          message: '類似スキルが既に存在します。重複登録でないか確認してください。',
+          similar_plugins: duplicateWarning,
+        },
+      }),
+    });
+
+    // バックグラウンドでembeddingを生成（レスポンスをブロックしない）
+    schedulePluginEmbedding(newPlugin[0].id, newPlugin[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/plugins/:id/generate-pitch — スキルの推薦文をOllamaで自動生成
+pluginsRouter.post('/:id/generate-pitch', async (req, res, next) => {
+  try {
+    const id = req.params.id;
+    const db = getDb();
+
+    const rows = await db
+      .select({
+        id: plugins.id,
+        name: plugins.name,
+        description: plugins.description,
+        usage_content: plugins.usage_content,
+        category: plugins.category,
+      })
+      .from(plugins)
+      .where(and(eq(plugins.id, id), eq(plugins.company_id, req.companyId!)))
+      .limit(1);
+
+    if (!rows.length) {
+      res.status(404).json({ error: 'not_found', message: 'スキルが見つかりません' });
+      return;
+    }
+
+    const { generateSkillPitch } = await import('../services/ollama.js');
+    const result = await generateSkillPitch(rows[0]);
+
+    res.json({ data: result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/plugins/recommend?q=text&limit=5 — セマンティック検索でスキルを推薦
+pluginsRouter.get('/recommend', async (req, res, next) => {
+  try {
+    const q = String(req.query.q ?? '').trim();
+    if (!q) {
+      res.status(400).json({ error: 'クエリが必要です' });
+      return;
+    }
+    const limit = Math.min(Number(req.query.limit ?? 5), 20);
+    const { embedQuery } = await import('../services/embedding.js');
+    const vec = await embedQuery(q);
+    const db = getDb();
+    // コサイン類似度で上位N件を取得（pgvector: 1 - cosine_distance）
+    const rows = await db.execute(sql`
+      SELECT
+        id, name, description, description_translated, category,
+        trigger_type, usage_count, last_used_at, enabled,
+        1 - (embedding <=> ${`[${vec.join(',')}]`}::vector) AS similarity
+      FROM plugins
+      WHERE company_id = ${req.companyId!}
+        AND enabled = true
+        AND embedding IS NOT NULL
+      ORDER BY embedding <=> ${`[${vec.join(',')}]`}::vector
+      LIMIT ${limit}
+    `);
+    res.json({ data: rows.rows });
   } catch (err) {
     next(err);
   }
@@ -605,17 +779,27 @@ pluginsRouter.post('/track-usage', async (req, res, next) => {
       return;
     }
 
+    const now = new Date();
     await db
       .update(plugins)
       .set({
         usage_count: sql`${plugins.usage_count} + 1`,
-        last_used_at: new Date(),
-        updated_at: new Date(),
+        last_used_at: now,
+        updated_at: now,
       })
       .where(and(
         inArray(plugins.id, matched.map(m => m.id)),
         eq(plugins.company_id, req.companyId!),
       ));
+
+    // 使用イベントを個別記録（期間別集計に使用）
+    await db.insert(plugin_usage_events).values(
+      matched.map(m => ({
+        plugin_id: m.id,
+        company_id: req.companyId!,
+        used_at: now,
+      }))
+    );
 
     res.json({ data: { updated: matched.length, skills: matched.map(m => m.name) } });
   } catch (err) {
@@ -638,6 +822,40 @@ pluginsRouter.post('/reset-usage', async (req, res, next) => {
 
 // GET /api/plugins/usage-stats?period=24h|7d — 期間内Top10スキル使用頻度
 // DBのusage_count/last_used_atを直接使用（テキスト再スキャンなし）
+// GET /api/plugins/duplicates — 類似度0.90以上のスキルペアを検出（重複候補一覧）
+pluginsRouter.get('/duplicates', async (req, res, next) => {
+  try {
+    const threshold = Math.min(Number(req.query.threshold ?? 0.95), 0.99);
+    const db = getDb();
+    // 自己結合でコサイン類似度が閾値以上のペアを抽出（重複しないよう a.id < b.id で制限）
+    const rows = await db.execute(sql`
+      SELECT
+        a.id AS id_a, a.name AS name_a, a.description AS desc_a, a.enabled AS enabled_a,
+        b.id AS id_b, b.name AS name_b, b.description AS desc_b, b.enabled AS enabled_b,
+        1 - (a.embedding <=> b.embedding) AS similarity
+      FROM plugins a
+      JOIN plugins b ON a.id < b.id
+      WHERE a.company_id = ${req.companyId!}
+        AND b.company_id = ${req.companyId!}
+        AND a.embedding IS NOT NULL
+        AND b.embedding IS NOT NULL
+        AND 1 - (a.embedding <=> b.embedding) >= ${threshold}
+      ORDER BY similarity DESC
+      LIMIT 50
+    `);
+    res.json({
+      data: rows.rows.map((r) => ({
+        similarity: Math.round(Number(r.similarity) * 100),
+        plugin_a: { id: r.id_a, name: r.name_a, description: r.desc_a, enabled: r.enabled_a },
+        plugin_b: { id: r.id_b, name: r.name_b, description: r.desc_b, enabled: r.enabled_b },
+      })),
+      meta: { threshold: Math.round(threshold * 100) },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 pluginsRouter.get('/usage-stats', async (req, res, next) => {
   try {
     const period = req.query.period === '7d' ? '7d' : '24h';
@@ -650,57 +868,36 @@ pluginsRouter.get('/usage-stats', async (req, res, next) => {
 
     const db = getDb();
 
-    // 期間内に最後に使用されたスキルをusage_count順で取得
-    const rows = await db
-      .select({
-        name: plugins.name,
-        usage_count: plugins.usage_count,
-        last_used_at: plugins.last_used_at,
-      })
-      .from(plugins)
-      .where(
-        and(
-          eq(plugins.company_id, req.companyId!),
-          eq(plugins.enabled, true),
-          gte(plugins.last_used_at, since),
-        )
-      )
-      .orderBy(desc(plugins.usage_count))
-      .limit(10);
+    // plugin_usage_events から期間内の実際の使用回数を集計
+    const rows = await db.execute(sql`
+      SELECT p.name, COUNT(e.id)::int AS count, MAX(e.used_at) AS last_used_at
+      FROM plugin_usage_events e
+      JOIN plugins p ON p.id = e.plugin_id
+      WHERE e.company_id = ${req.companyId!}
+        AND e.used_at >= ${since}
+        AND p.enabled = true
+      GROUP BY p.name
+      ORDER BY count DESC
+      LIMIT 10
+    `);
 
-    // 期間内データが0件の場合、使用実績ありのスキルを全期間で表示（フォールバック）
-    let top10 = rows.map(r => ({
-      name: r.name,
-      count: r.usage_count,
-      last_used_at: r.last_used_at,
+    let top10 = rows.rows.map((r: Record<string, unknown>) => ({
+      name: r.name as string,
+      count: r.count as number,
+      last_used_at: r.last_used_at as string | null,
       is_fallback: false,
     }));
 
+    // 期間内データが0件の場合、累計ベースでフォールバック表示
     let isFallback = false;
     if (top10.length === 0) {
       const fallbackRows = await db
-        .select({
-          name: plugins.name,
-          usage_count: plugins.usage_count,
-          last_used_at: plugins.last_used_at,
-        })
+        .select({ name: plugins.name, usage_count: plugins.usage_count, last_used_at: plugins.last_used_at })
         .from(plugins)
-        .where(
-          and(
-            eq(plugins.company_id, req.companyId!),
-            eq(plugins.enabled, true),
-            gte(plugins.usage_count, 1),
-          )
-        )
+        .where(and(eq(plugins.company_id, req.companyId!), eq(plugins.enabled, true), gte(plugins.usage_count, 1)))
         .orderBy(desc(plugins.usage_count))
         .limit(10);
-
-      top10 = fallbackRows.map(r => ({
-        name: r.name,
-        count: r.usage_count,
-        last_used_at: r.last_used_at,
-        is_fallback: true,
-      }));
+      top10 = fallbackRows.map(r => ({ name: r.name, count: r.usage_count, last_used_at: r.last_used_at as unknown as string | null, is_fallback: true }));
       isFallback = fallbackRows.length > 0;
     }
 
@@ -761,6 +958,7 @@ pluginsRouter.post('/sync', async (req, res, next) => {
       dirName: string;  // スキルディレクトリ名（usage_content 取得に使用）
       description: string;
       category: string | null;
+      hasExplicitCategory: boolean;  // フロントマターにカテゴリが明示されているか
       usageContent: string | null;
       isNew: boolean;
       existingId?: string;
@@ -770,31 +968,35 @@ pluginsRouter.post('/sync', async (req, res, next) => {
     let skipped = 0;
     const errors: { name: string; reason: string }[] = [];
 
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      const skillFile = path.join(skillsDir, entry.name, 'SKILL.md');
-      if (!fs.existsSync(skillFile)) continue;
-
-      const content = fs.readFileSync(skillFile, 'utf-8');
+    /** スキルエントリを処理して toInsert/toUpdate/skipped/errors に振り分けるヘルパー */
+    function processSkillContent(
+      rawName: string,
+      content: string,
+      filePath: string,
+    ): void {
       const { name: parsedName, description: parsedDesc, category: parsedCategory } = parseFrontmatter(content);
-
-      // 循環スタブ検出: "Xスキルを使って実行してください" パターンはスキップ
-      // （agent wrapperの "Xエージェントを使って実行してください" は正常なデリゲーションなのでOK）
       const bodyContent = extractBodyAfterFrontmatter(content);
+
+      // 循環スタブ: "Xスキルを使って実行してください" はスキップ
       if (/スキルを使って実行してください/.test(bodyContent)) {
-        errors.push({ name: entry.name, reason: '循環スタブ（スキルを使って実行してください）のためスキップ' });
-        continue;
+        errors.push({ name: rawName, reason: '循環スタブ（スキルを使って実行してください）のためスキップ' });
+        return;
+      }
+      // エージェントラッパー（薄い委譲のみ）はスキップ
+      // body が短くかつ "エージェントを使って実行してください" だけの場合
+      if (/エージェントを使って実行してください/.test(bodyContent) && bodyContent.trim().split('\n').length < 5) {
+        skipped++;
+        return;
       }
 
-      // Always use the directory name as the invocation key stored in DB.
-      // The frontmatter `name:` field may differ (e.g. "ckm:banner-design" vs dir "banner-design"),
-      // which would generate broken slash commands like `/ckmbanner-design`.
-      const skillName = sanitizeString(entry.name);
-      const description = parsedDesc ?? `Imported from ${entry.name}`;
-      const usageContent = extractBodyAfterFrontmatter(content);
-
+      const skillName = sanitizeString(rawName);
+      if (!skillName) {
+        errors.push({ name: rawName, reason: 'スキル名が空になりました' });
+        return;
+      }
+      const description = parsedDesc ?? `Imported from ${rawName}`;
       const sanitizedDesc = sanitizeDesc(description) ?? description;
-      // Migration: look up by current directory name first, then by old frontmatter-based name.
+
       const oldParsedKey = parsedName ? sanitizeString(parsedName).toLowerCase() : null;
       const existingEntry = existingMap.get(skillName.toLowerCase())
         ?? (oldParsedKey ? existingMap.get(oldParsedKey) : undefined);
@@ -809,10 +1011,11 @@ pluginsRouter.post('/sync', async (req, res, next) => {
         ) {
           toUpdate.push({
             name: skillName,
-            dirName: entry.name,
+            dirName: rawName,
             description: sanitizedDesc,
             category: parsedCategory ?? existingEntry.category,
-            usageContent: usageContent || null,
+            hasExplicitCategory: !!parsedCategory,
+            usageContent: bodyContent || null,
             isNew: false,
             existingId: existingEntry.id,
           });
@@ -820,47 +1023,58 @@ pluginsRouter.post('/sync', async (req, res, next) => {
           skipped++;
         }
       } else {
-        toInsert.push({ name: skillName, dirName: entry.name, description: sanitizedDesc, category: parsedCategory, usageContent: usageContent || null, isNew: true });
+        toInsert.push({
+          name: skillName,
+          dirName: rawName,
+          description: sanitizedDesc,
+          category: parsedCategory,
+          hasExplicitCategory: !!parsedCategory,
+          usageContent: bodyContent || null,
+          isNew: true,
+        });
       }
     }
 
-    // 翻訳が必要なものをまとめて翻訳
-    const needsTranslation = companyLang !== 'en';
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        // SKILL.md サブディレクトリ形式
+        const skillFile = path.join(skillsDir, entry.name, 'SKILL.md');
+        if (!fs.existsSync(skillFile)) continue;
+        const content = fs.readFileSync(skillFile, 'utf-8');
+        processSkillContent(entry.name, content, skillFile);
+      } else if (entry.isFile() && entry.name.endsWith('.md')) {
+        // フラット .md 形式
+        const filePath = path.join(skillsDir, entry.name);
+        const rawName = entry.name.replace(/\.md$/, '');
+        const content = fs.readFileSync(filePath, 'utf-8');
+        processSkillContent(rawName, content, filePath);
+      }
+    }
+
+    // Phase 1: フロントマターにカテゴリがない場合のみキーワード推定で仮設定（Ollama不使用）
+    // フロントマターのカテゴリは権威的なソースとして変更しない
     const allToProcess = [...toInsert, ...toUpdate];
-    let translations: string[] = allToProcess.map((s) => s.description);
 
-    if (needsTranslation && allToProcess.length > 0) {
-      translations = await translateDescriptions(
-        allToProcess.map((s) => s.description),
-        companyLang,
-        anthropicApiKey,
-      );
+    for (const skill of allToProcess) {
+      if (!skill.category) {
+        skill.category = guessCategoryByKeyword(skill.name, skill.description);
+      }
     }
 
-    // カテゴリがないものをまとめて分類
-    const needsCategoryIdx = allToProcess
-      .map((s, i) => (s.category ? null : i))
-      .filter((i): i is number => i !== null);
-
-    if (needsCategoryIdx.length > 0) {
-      const toCategorizeBatch = needsCategoryIdx.map((i) => ({
-        name: allToProcess[i].name,
-        description: allToProcess[i].description,
-      }));
-      const assignedCategories = await categorizeSkills(toCategorizeBatch);
-      needsCategoryIdx.forEach((skillIdx, batchIdx) => {
-        allToProcess[skillIdx].category = assignedCategories[batchIdx];
-      });
-    }
+    // 翻訳はバックグラウンドで実施するため、ここではスキップ
+    const translations: string[] = allToProcess.map((s) => s.description);
 
     // DB に書き込み
     let imported = 0;
     let updated = 0;
+    // バックグラウンド精度向上対象：フロントマターにカテゴリがないスキル
+    const skillsForBgRefine: { id: string; name: string; description: string; usageContent: string | null }[] = [];
 
     for (let i = 0; i < allToProcess.length; i++) {
       const skill = allToProcess[i];
       const translated = translations[i];
-      const descTranslated = needsTranslation && translated !== skill.description ? translated : null;
+      // 翻訳はバックグラウンドで実施するため、ここでは常にnull
+      const descTranslated = translated !== skill.description ? translated : null;
 
       try {
         const triggerType = detectTriggerType(skill.description, skill.usageContent);
@@ -881,14 +1095,18 @@ pluginsRouter.post('/sync', async (req, res, next) => {
             translation_lang = EXCLUDED.translation_lang,
             category = COALESCE(EXCLUDED.category, plugins.category),
             usage_content = EXCLUDED.usage_content,
-            usage_examples = EXCLUDED.usage_examples,
+            usage_examples = COALESCE(plugins.usage_examples, EXCLUDED.usage_examples),
             trigger_type = EXCLUDED.trigger_type,
             updated_at = now()
-          RETURNING (xmax = 0) AS inserted
+          RETURNING id, (xmax = 0) AS inserted
         `);
-        const wasInserted2 = (syncResult2.rows[0] as { inserted?: boolean })?.inserted;
-        if (wasInserted2) imported++;
+        const row = syncResult2.rows[0] as { id?: string; inserted?: boolean } | undefined;
+        if (row?.inserted) imported++;
         else updated++;
+        // フロントマターにカテゴリがないスキルはバックグラウンドでOllama精度向上の対象
+        if (row?.id && !skill.hasExplicitCategory) {
+          skillsForBgRefine.push({ id: row.id, name: skill.name, description: skill.description, usageContent: skill.usageContent });
+        }
       } catch (e) {
         errors.push({ name: skill.name, reason: e instanceof Error ? e.message : 'unknown' });
       }
@@ -899,10 +1117,138 @@ pluginsRouter.post('/sync', async (req, res, next) => {
     const agentsDir = path.join(HOME, '.claude', 'agents');
     const { created: wrappersCreated } = ensureAgentWrappers(agentsDir, skillsDir);
 
+    // Phase 1完了: 即時レスポンスを返す（スキルはすでにDBに反映済み）
     res.json({
       data: { imported, updated, skipped, errors, wrappers_created: wrappersCreated },
-      meta: { skills_dir: skillsDir, total_scanned: imported + updated + skipped + errors.length },
+      meta: { skills_dir: skillsDir, total_scanned: imported + updated + skipped + errors.length, bg_refine: skillsForBgRefine.length },
     });
+
+    // Phase 2: バックグラウンドで翻訳・カテゴリ精度向上（レスポンス後に実行）
+    // Phase 2: バックグラウンドでOllama精度向上（翻訳 + カテゴリ再分類）
+    // フロントマターにカテゴリがなかったスキルのみ対象（タイムアウトしない設計）
+    if (skillsForBgRefine.length > 0) {
+      refineSyncInBackground(req.companyId!, companyLang, skillsForBgRefine).catch(() => {});
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/plugins/translate-pending — 翻訳が未完了のスキルをバックグラウンドで再開する
+pluginsRouter.post('/translate-pending', async (req, res, next) => {
+  try {
+    const db = getDb();
+    const companyRows = await db
+      .select({ settings: companies.settings })
+      .from(companies)
+      .where(eq(companies.id, req.companyId!))
+      .limit(1);
+    const companyLang = ((companyRows[0]?.settings ?? {}) as Record<string, unknown>).language as string ?? 'ja';
+
+    if (companyLang === 'en') {
+      res.json({ data: { message: '言語が英語のため翻訳不要', scheduled: 0 } });
+      return;
+    }
+
+    // 翻訳が未完了のスキルを取得
+    const rows = await db.execute(sql`
+      SELECT id, name, description, usage_content
+      FROM plugins
+      WHERE company_id = ${req.companyId!}
+        AND (description_translated IS NULL OR usage_examples_translated IS NULL OR usage_content_translated IS NULL)
+      LIMIT 500
+    `);
+    const pending = rows.rows as { id: string; name: string; description: string; usage_content: string | null }[];
+
+    res.json({ data: { scheduled: pending.length, lang: companyLang } });
+
+    if (pending.length > 0) {
+      refineSyncInBackground(req.companyId!, companyLang, pending.map(r => ({
+        id: r.id,
+        name: r.name,
+        description: r.description,
+        usageContent: r.usage_content,
+      }))).catch(() => {});
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/plugins/regenerate-examples — 全スキルの usage_examples をLLMで再生成する
+pluginsRouter.post('/regenerate-examples', async (req, res, next) => {
+  try {
+    const db = getDb();
+    const rows = await db.execute(sql`
+      SELECT id, name, description, usage_content
+      FROM plugins
+      WHERE company_id = ${req.companyId!}
+        AND (description IS NOT NULL OR usage_content IS NOT NULL)
+      ORDER BY updated_at ASC
+      LIMIT 500
+    `);
+    const skills = rows.rows as { id: string; name: string; description: string | null; usage_content: string | null }[];
+
+    res.json({ data: { scheduled: skills.length } });
+
+    // バックグラウンドで処理
+    (async () => {
+      const { generateUsageExamples } = await import('../services/ollama.js');
+      const CHUNK = 10;
+      let done = 0;
+      for (let i = 0; i < skills.length; i += CHUNK) {
+        const chunk = skills.slice(i, i + CHUNK);
+        try {
+          const examples = await generateUsageExamples(
+            chunk.map(s => ({ name: s.name, description: s.description ?? '', usageContent: s.usage_content }))
+          );
+          for (let j = 0; j < chunk.length; j++) {
+            const ex = examples[j];
+            if (!ex || ex.length === 0) continue;
+            const exJson = JSON.stringify(ex);
+            await db.execute(sql`
+              UPDATE plugins
+              SET usage_examples = ${exJson},
+                  usage_examples_translated = ${exJson},
+                  updated_at = now()
+              WHERE id = ${chunk[j].id}
+            `);
+            done++;
+          }
+          console.log(`[regenerate-examples] ${done}/${skills.length} 完了`);
+        } catch (err) {
+          console.error(`[regenerate-examples] チャンク失敗:`, err);
+        }
+      }
+      console.log(`[regenerate-examples] 全件完了: ${done}件`);
+    })().catch((err) => console.error('[regenerate-examples] 失敗:', err));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/plugins/generate-embeddings — embedding が未生成のスキルに対してバッチ生成する
+pluginsRouter.post('/generate-embeddings', async (req, res, next) => {
+  try {
+    const db = getDb();
+    const rows = await db.execute(sql`
+      SELECT id, name, description, usage_content, category
+      FROM plugins
+      WHERE company_id = ${req.companyId!} AND embedding IS NULL
+      LIMIT 500
+    `);
+    const targets = rows.rows as { id: string; name: string; description: string | null; usage_content: string | null; category: string | null }[];
+
+    res.json({ data: { scheduled: targets.length } });
+
+    // バックグラウンドでembedding生成
+    (async () => {
+      for (const p of targets) {
+        try {
+          await schedulePluginEmbedding(p.id, p);
+        } catch { /* 1件失敗しても継続 */ }
+      }
+    })().catch(() => {});
   } catch (err) {
     next(err);
   }
@@ -1161,7 +1507,7 @@ pluginsRouter.post('/update-all', async (req, res, next) => {
           DO UPDATE SET
             description = EXCLUDED.description,
             usage_content = EXCLUDED.usage_content,
-            usage_examples = EXCLUDED.usage_examples,
+            usage_examples = COALESCE(plugins.usage_examples, EXCLUDED.usage_examples),
             trigger_type = EXCLUDED.trigger_type,
             updated_at = now()
           RETURNING (xmax = 0) AS inserted
@@ -1203,7 +1549,7 @@ pluginsRouter.post('/categorize', async (req, res, next) => {
 
     for (let i = 0; i < uncategorized.length; i += BATCH_SIZE) {
       const batch = uncategorized.slice(i, i + BATCH_SIZE);
-      const categories = await categorizeSkills(
+      const categories = await categorizeSkillsWithOllama(
         batch.map((s) => ({ name: s.name, description: s.description ?? '' }))
       );
 
@@ -1257,51 +1603,94 @@ pluginsRouter.post('/fetch-usage', async (req, res, next) => {
   }
 });
 
-// POST /api/plugins/translate-usage — usage_content を日本語に翻訳（claude -p CLIを使用）
+// POST /api/plugins/translate-usage — usage_content と description を対象言語に翻訳
 pluginsRouter.post('/translate-usage', async (req, res, next) => {
   try {
     const db = getDb();
 
-    // 英語の usage_content を持つスキルを取得（すでに日本語の場合はスキップ）
+    // 会社の言語設定を取得
+    const companyRows = await db
+      .select({ settings: companies.settings })
+      .from(companies)
+      .where(eq(companies.id, req.companyId!))
+      .limit(1);
+    const companySettings = (companyRows[0]?.settings ?? {}) as Record<string, unknown>;
+    const companyLang = (companySettings.language as string) ?? 'ja';
+    const anthropicApiKey = (companySettings.anthropicApiKey as string) || process.env.ANTHROPIC_API_KEY || '';
+
+    // --- Phase 1: description フィールドを一括翻訳（Anthropic API 使用）---
+    let descTranslated = 0;
+    if (companyLang !== 'en') {
+      const descRows = await db
+        .select({
+          id: plugins.id,
+          description: plugins.description,
+          description_translated: plugins.description_translated,
+          translation_lang: plugins.translation_lang,
+        })
+        .from(plugins)
+        .where(
+          and(
+            eq(plugins.company_id, req.companyId!),
+            sql`${plugins.description} IS NOT NULL`,
+          ),
+        );
+
+      // translation_lang が現在の言語でないものだけ翻訳対象
+      const needsDescTranslation = descRows.filter(
+        (p) => p.translation_lang !== companyLang && p.description,
+      );
+
+      if (needsDescTranslation.length > 0) {
+        const rawDescs = needsDescTranslation.map((p) => p.description!);
+        const translated = await translateDescriptions(rawDescs, companyLang);
+
+        for (let i = 0; i < needsDescTranslation.length; i++) {
+          const row = needsDescTranslation[i];
+          const translatedDesc = translated[i];
+          if (translatedDesc && translatedDesc !== row.description) {
+            await db
+              .update(plugins)
+              .set({
+                description_translated: translatedDesc,
+                translation_lang: companyLang,
+                updated_at: sql`now()`,
+              })
+              .where(and(eq(plugins.id, row.id), eq(plugins.company_id, req.companyId!)));
+            descTranslated++;
+          }
+        }
+      }
+    }
+
+    // --- Phase 2: usage_content を Ollama (Qwen3:14b) で翻訳 ---
+    const { translateUsageContent } = await import('../services/ollama.js');
     const allPlugins = await db
       .select({ id: plugins.id, name: plugins.name, usage_content: plugins.usage_content })
       .from(plugins)
       .where(and(eq(plugins.company_id, req.companyId!), sql`${plugins.usage_content} IS NOT NULL`));
 
     // 英語判定: 先頭200文字に ASCII が 60% 以上なら英語とみなす
-    const needsTranslation = allPlugins.filter((p) => {
+    const needsUsageTranslation = allPlugins.filter((p) => {
       if (!p.usage_content) return false;
       const sample = p.usage_content.slice(0, 200);
       const ascii = sample.split('').filter((c) => c.charCodeAt(0) < 128).length;
       return ascii / sample.length > 0.6;
     });
 
-    if (needsTranslation.length === 0) {
-      res.json({ data: { translated: 0, total: allPlugins.length, message: '翻訳が必要なスキルはありません' } });
+    if (needsUsageTranslation.length === 0 && descTranslated === 0) {
+      res.json({ data: { translated: 0, descTranslated, total: allPlugins.length, message: '翻訳が必要なスキルはありません' } });
       return;
     }
 
     let translated = 0;
     let failed = 0;
 
-    // 1件ずつ claude -p で翻訳（usage_content が長いためバッチ不可）
-    for (const plugin of needsTranslation) {
+    // 1件ずつ Ollama で翻訳（usage_content が長いためバッチ不可）
+    for (const plugin of needsUsageTranslation) {
       try {
-        const content = plugin.usage_content!;
-        // 5000文字以下に切り詰め
-        const truncated = content.slice(0, 5000);
-        const prompt =
-          `以下の技術ドキュメントを日本語に翻訳してください。` +
-          `Markdown書式を維持してください。コード例はそのまま英語で残してください。` +
-          `翻訳結果だけを出力してください。\n\n${truncated}`;
-
-        const { stdout } = await execFileAsync('claude', ['-p', prompt], {
-          timeout: 60000,
-          maxBuffer: 2 * 1024 * 1024,
-        });
-
-        const result = stdout.trim();
-        if (result.length > 50) {
+        const result = await translateUsageContent(plugin.usage_content!, companyLang);
+        if (result) {
           await db
             .update(plugins)
             .set({ usage_content: result, updated_at: sql`now()` })
@@ -1315,7 +1704,7 @@ pluginsRouter.post('/translate-usage', async (req, res, next) => {
       }
     }
 
-    res.json({ data: { translated, failed, total: needsTranslation.length } });
+    res.json({ data: { translated, descTranslated, failed, total: needsUsageTranslation.length } });
   } catch (err) {
     next(err);
   }
@@ -1671,6 +2060,11 @@ pluginsRouter.patch('/:pluginId', async (req, res, next) => {
       .where(and(eq(plugins.id, req.params.pluginId), eq(plugins.company_id, req.companyId!)))
       .returning();
     res.json({ data: updated[0] });
+
+    // name/description/usage_content が変わった場合はembeddingを再生成
+    if (updates.name !== undefined || updates.description !== undefined) {
+      schedulePluginEmbedding(updated[0].id, updated[0]);
+    }
   } catch (err) {
     next(err);
   }

@@ -12,7 +12,8 @@ export default defineConfig({
     ['list'],
   ],
   use: {
-    baseURL: 'http://localhost:5173',
+    // Nginx serves on port 80 (http://localhost)
+    baseURL: process.env.BASE_URL ?? 'http://localhost:5173',
     trace: 'on-first-retry',
     screenshot: 'on',
     viewport: { width: 1280, height: 800 },

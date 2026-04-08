@@ -217,3 +217,27 @@ memoriesRouter.delete('/:id', async (req, res, next) => {
     next(err);
   }
 });
+
+
+// GET /api/memories/search?q=text&limit=10 — セマンティック検索
+memoriesRouter.get('/search', async (req, res, next) => {
+  try {
+    const q = String(req.query.q ?? '').trim();
+    if (!q) { res.status(400).json({ error: 'クエリが必要です' }); return; }
+    const limit = Math.min(Number(req.query.limit ?? 10), 50);
+    const { embedQuery } = await import('../services/embedding.js');
+    const vec = await embedQuery(q);
+    const db = getDb();
+    const rows = await db.execute(sql`
+      SELECT id, type, title, content, tags, importance, session_id, project_path,
+             last_recalled_at, recall_count, created_at,
+             1 - (embedding <=> ${`[${vec.join(',')}]`}::vector) AS similarity
+      FROM memories
+      WHERE company_id = ${req.companyId!}
+        AND embedding IS NOT NULL
+      ORDER BY embedding <=> ${`[${vec.join(',')}]`}::vector
+      LIMIT ${limit}
+    `);
+    res.json({ data: rows.rows });
+  } catch (err) { next(err); }
+});

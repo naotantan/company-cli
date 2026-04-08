@@ -1,8 +1,15 @@
 import {
-  pgTable, text, varchar, integer, boolean, timestamp, uuid, json, index
+  pgTable, text, varchar, integer, boolean, timestamp, uuid, json, index, customType
 } from 'drizzle-orm/pg-core';
 import { companies } from './group-a';
 import { agents } from './group-b';
+
+// pgvector カスタム型 (384次元: paraphrase-multilingual-MiniLM-L12-v2)
+export const vector384 = customType<{ data: number[]; driverData: string }>({
+  dataType() { return 'vector(384)'; },
+  toDriver(value: number[]): string { return `[${value.join(',')}]`; },
+  fromDriver(value: string): number[] { return value.slice(1, -1).split(',').map(Number); },
+});
 
 // H1: plugins
 export const plugins = pgTable('plugins', {
@@ -14,13 +21,16 @@ export const plugins = pgTable('plugins', {
   translation_lang: varchar('translation_lang', { length: 10 }),
   category: varchar('category', { length: 100 }),
   usage_content: text('usage_content'),
+  usage_content_translated: text('usage_content_translated'),
   usage_examples: text('usage_examples'),
+  usage_examples_translated: text('usage_examples_translated'),
   trigger_type: varchar('trigger_type', { length: 20 }).default('explicit'),
   repository_url: text('repository_url'),
   version: varchar('version', { length: 20 }).default('1.0.0'),
   enabled: boolean('enabled').default(true),
   usage_count: integer('usage_count').notNull().default(0),
   last_used_at: timestamp('last_used_at'),
+  embedding: vector384('embedding'),
   created_at: timestamp('created_at').defaultNow(),
   updated_at: timestamp('updated_at').defaultNow(),
 }, (table) => ({
@@ -102,6 +112,17 @@ export const plugin_webhooks = pgTable('plugin_webhooks', {
   created_at: timestamp('created_at').defaultNow(),
 }, (table) => ({
   idxPlugin: index('idx_webhooks_plugin').on(table.plugin_id),
+}));
+
+// H8b: plugin_usage_events — スキル使用イベント（期間別集計用）
+export const plugin_usage_events = pgTable('plugin_usage_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  plugin_id: uuid('plugin_id').notNull().references(() => plugins.id, { onDelete: 'cascade' }),
+  company_id: uuid('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
+  used_at: timestamp('used_at').defaultNow().notNull(),
+}, (table) => ({
+  idxPlugin: index('idx_usage_events_plugin').on(table.plugin_id),
+  idxCompanyTime: index('idx_usage_events_company_time').on(table.company_id, table.used_at),
 }));
 
 // H9: activity_log
@@ -192,6 +213,7 @@ export const session_summaries = pgTable('session_summaries', {
   // セッション開始・終了時刻
   session_started_at: timestamp('session_started_at'),
   session_ended_at: timestamp('session_ended_at').defaultNow(),
+  embedding: vector384('embedding'),
   created_at: timestamp('created_at').defaultNow(),
 }, (table) => ({
   idxCompany: index('idx_session_summaries_company').on(table.company_id),
@@ -222,6 +244,7 @@ export const memories = pgTable('memories', {
   last_recalled_at: timestamp('last_recalled_at'),
   // 想起回数
   recall_count: integer('recall_count').notNull().default(0),
+  embedding: vector384('embedding'),
   created_at: timestamp('created_at').defaultNow(),
   updated_at: timestamp('updated_at').defaultNow(),
 }, (table) => ({

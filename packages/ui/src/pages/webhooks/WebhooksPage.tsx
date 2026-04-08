@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { Plus, X, Send, Trash2 } from 'lucide-react';
+import { useTranslation } from '@maestro/i18n';
 import api from '../../lib/api.ts';
 import { Alert, EmptyState, LoadingSpinner } from '../../components/ui';
 
@@ -14,20 +15,21 @@ interface Webhook {
   last_status?: string | null;
 }
 
-const DEFAULT_EVENTS = ['job.complete', 'job.error', 'approval.request', 'agent.offline', 'issue.create'];
+const DEFAULT_EVENTS = ['job.complete', 'job.error', 'agent.offline'];
 
-function formatLastTriggered(dt?: string | null): string {
+function formatLastTriggered(dt: string | null | undefined, t: (key: string, opts?: Record<string, unknown>) => string): string {
   if (!dt) return '—';
   const d = new Date(dt);
   const now = Date.now();
   const diff = Math.floor((now - d.getTime()) / 1000);
-  if (diff < 60) return `${diff}秒前`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}分前`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}時間前`;
-  return `${Math.floor(diff / 86400)}日前`;
+  if (diff < 60) return t('common.timeAgo.seconds', { n: diff });
+  if (diff < 3600) return t('common.timeAgo.minutes', { n: Math.floor(diff / 60) });
+  if (diff < 86400) return t('common.timeAgo.hours', { n: Math.floor(diff / 3600) });
+  return t('common.timeAgo.days', { n: Math.floor(diff / 86400) });
 }
 
 export default function WebhooksPage() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ name: '', url: '', events: '' });
@@ -78,11 +80,11 @@ export default function WebhooksPage() {
     try {
       const parsed = new URL(form.url);
       if (!['https:', 'http:'].includes(parsed.protocol)) {
-        setFormError('URLはhttpsまたはhttpで始まる必要があります');
+        setFormError(t('webhooks.urlProtocolError'));
         return;
       }
     } catch {
-      setFormError('有効なURLを入力してください');
+      setFormError(t('webhooks.urlInvalidError'));
       return;
     }
     setFormError('');
@@ -95,7 +97,7 @@ export default function WebhooksPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
           <h1 className="text-3xl font-bold">Webhook</h1>
-          <p style={{ marginTop: 4, color: 'var(--color-text-2)' }}>外部サービスへのイベント通知設定</p>
+          <p style={{ marginTop: 4, color: 'var(--color-text-2)' }}>{t('webhooks.description')}</p>
         </div>
         <button
           onClick={() => setShowModal(true)}
@@ -114,14 +116,14 @@ export default function WebhooksPage() {
           }}
         >
           <Plus size={16} />
-          Webhook追加
+          {t('webhooks.addButton')}
         </button>
       </div>
 
       {isLoading ? (
-        <LoadingSpinner text="Webhookを読み込み中..." />
+        <LoadingSpinner text={t('webhooks.loading')} />
       ) : error ? (
-        <Alert variant="danger" message="Webhookの読み込みに失敗しました" />
+        <Alert variant="danger" message={t('webhooks.loadError')} />
       ) : (
         <div
           style={{
@@ -136,7 +138,7 @@ export default function WebhooksPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-surface-1)' }}>
-                  {['エンドポイント', 'イベント', 'ステータス', '最終トリガー', '操作'].map((h) => (
+                  {[t('webhooks.colEndpoint'), t('webhooks.colEvents'), t('webhooks.colStatus'), t('webhooks.colLastTrigger'), t('webhooks.colActions')].map((h) => (
                     <th
                       key={h}
                       style={{ padding: '10px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: 'var(--color-text-2)', whiteSpace: 'nowrap' }}
@@ -197,11 +199,11 @@ export default function WebhooksPage() {
                             display: 'inline-block',
                           }}
                         />
-                        {wh.enabled ? '有効' : '無効'}
+                        {wh.enabled ? t('webhooks.enabled') : t('webhooks.disabled')}
                       </button>
                     </td>
                     <td style={{ padding: '14px 16px' }}>
-                      <div style={{ fontSize: 12, color: 'var(--color-text-3)' }}>{formatLastTriggered(wh.last_triggered_at)}</div>
+                      <div style={{ fontSize: 12, color: 'var(--color-text-3)' }}>{formatLastTriggered(wh.last_triggered_at, t)}</div>
                       {wh.last_status && (
                         <div
                           style={{
@@ -218,7 +220,7 @@ export default function WebhooksPage() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
                         <button
                           onClick={() => testWebhook.mutate(wh.id)}
-                          title="テスト送信"
+                          title={t('webhooks.testSend')}
                           style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -233,11 +235,11 @@ export default function WebhooksPage() {
                           }}
                         >
                           <Send size={12} />
-                          テスト
+                          {t('webhooks.testButton')}
                         </button>
                         <button
                           onClick={() => deleteWebhook.mutate(wh.id)}
-                          title="削除"
+                          title={t('common.delete')}
                           style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -258,7 +260,7 @@ export default function WebhooksPage() {
               </tbody>
             </table>
           ) : (
-            <EmptyState icon="🔔" title="Webhookが登録されていません" />
+            <EmptyState icon="🔔" title={t('webhooks.empty')} />
           )}
         </div>
       )}
@@ -272,7 +274,7 @@ export default function WebhooksPage() {
           padding: '14px 18px',
         }}
       >
-        <div style={{ fontSize: 13, fontWeight: 500, color: '#1e40af', marginBottom: 6 }}>Webhookシークレット</div>
+        <div style={{ fontSize: 13, fontWeight: 500, color: '#1e40af', marginBottom: 6 }}>{t('webhooks.secretTitle')}</div>
         <p style={{ fontSize: 12, color: '#3b82f6', lineHeight: 1.6, margin: 0 }}>
           maestro はすべての Webhook リクエストに <code>X-Maestro-Signature</code> ヘッダーを付与します。
           受信側でシークレットを使った HMAC-SHA256 署名検証を行うことを推奨します。
@@ -297,24 +299,24 @@ export default function WebhooksPage() {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <h2 style={{ fontSize: 18, fontWeight: 600 }}>Webhookを追加</h2>
+              <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t('webhooks.addModal')}</h2>
               <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-3)' }}>
                 <X size={20} />
               </button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6 }}>名前</label>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6 }}>{t('webhooks.nameLabel')}</label>
                 <input
                   type="text"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder="例: Slack通知"
+                  placeholder={t('webhooks.namePlaceholder')}
                   style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', fontSize: 14, boxSizing: 'border-box' }}
                 />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6 }}>URL</label>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6 }}>{t('webhooks.urlLabel')}</label>
                 <input
                   type="url"
                   value={form.url}
@@ -325,7 +327,7 @@ export default function WebhooksPage() {
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6 }}>
-                  イベント <span style={{ fontSize: 11, color: 'var(--color-text-3)', fontWeight: 400 }}>（カンマ区切り）</span>
+                  {t('webhooks.eventsLabel')} <span style={{ fontSize: 11, color: 'var(--color-text-3)', fontWeight: 400 }}>{t('webhooks.eventsNote')}</span>
                 </label>
                 <input
                   type="text"
@@ -352,18 +354,18 @@ export default function WebhooksPage() {
                 </div>
               </div>
               {(formError || createWebhook.isError) && (
-                <Alert variant="danger" message={formError || 'Webhookの作成に失敗しました'} />
+                <Alert variant="danger" message={formError || t('webhooks.createError')} />
               )}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                 <button onClick={() => setShowModal(false)} style={{ padding: '8px 16px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', cursor: 'pointer', fontSize: 14 }}>
-                  キャンセル
+                  {t('common.cancel')}
                 </button>
                 <button
                   onClick={handleCreate}
                   disabled={!form.name.trim() || !form.url.trim() || createWebhook.isLoading}
                   style={{ padding: '8px 16px', border: 'none', borderRadius: 'var(--radius-md)', background: 'var(--color-primary)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 500, opacity: !form.name.trim() || !form.url.trim() ? 0.6 : 1 }}
                 >
-                  {createWebhook.isLoading ? '追加中...' : '追加'}
+                  {createWebhook.isLoading ? t('webhooks.adding') : t('webhooks.add')}
                 </button>
               </div>
             </div>

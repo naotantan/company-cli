@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useQuery } from 'react-query';
 import { useTranslation } from '@maestro/i18n';
 import { Alert, Button, Card, LoadingSpinner } from '../../components/ui';
@@ -6,9 +6,10 @@ import { PluginCard, StarIcon, type Plugin } from './PluginCard.tsx';
 import { PluginDetailModal } from './PluginDetailModal.tsx';
 import { usePluginActions } from './usePluginActions.ts';
 import api from '../../lib/api.ts';
+import { Sparkles, Search, X, Zap, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 
-const ALL_CATEGORY = 'すべて';
-const FAVORITES_TAB = 'お気に入り';
+const ALL_CATEGORY = '__all__';
+const FAVORITES_TAB = '__favorites__';
 
 /** localStorageでお気に入りスキルIDを管理するhook */
 function useFavorites() {
@@ -57,6 +58,7 @@ const SyncIcon = () => (
 
 /** コピー可能なプロンプト表示 */
 function CopyablePrompt({ prompt }: { prompt: string }) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
     navigator.clipboard.writeText(prompt);
@@ -72,7 +74,7 @@ function CopyablePrompt({ prompt }: { prompt: string }) {
         <rect x="9" y="9" width="13" height="13" rx="2" />
         <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
       </svg>
-      <span>{copied ? 'コピーしました' : prompt}</span>
+      <span>{copied ? t('plugins.copiedPrompt') : prompt}</span>
     </button>
   );
 }
@@ -118,11 +120,174 @@ function PluginGrid({ plugins, deleting, onToggle, onUninstall, favorites, onTog
   );
 }
 
+interface RecommendResult {
+  id: string; name: string; description?: string; category?: string;
+  trigger_type?: string; usage_count?: number; similarity: number;
+}
+
+/** スキル推薦ウィジェット */
+interface DuplicatePair {
+  similarity: number;
+  plugin_a: { id: string; name: string; description: string | null; enabled: boolean };
+  plugin_b: { id: string; name: string; description: string | null; enabled: boolean };
+}
+
+/** 重複スキル候補ウィジェット */
+function DuplicateDetector({ onShowDetail }: { onShowDetail: (p: Plugin) => void }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const { data, isLoading } = useQuery<{ data: DuplicatePair[]; meta: { threshold: number } }>(
+    ['plugins-duplicates', 0.95],
+    () => api.get('/plugins/duplicates?threshold=0.95').then((r) => r.data),
+    { staleTime: 5 * 60 * 1000 },
+  );
+  const pairs = data?.data ?? [];
+  if (isLoading || pairs.length === 0) return null;
+
+  return (
+    <div className="rounded-th border border-th-warning/40 bg-th-warning-dim overflow-hidden">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-th-warning/10 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 text-th-warning flex-shrink-0" />
+          <span className="text-sm font-medium text-th-warning">
+            {t('plugins.duplicateDetected', { count: pairs.length })}
+          </span>
+        </div>
+        {open ? <ChevronUp className="h-4 w-4 text-th-warning" /> : <ChevronDown className="h-4 w-4 text-th-warning" />}
+      </button>
+
+      {open && (
+        <div className="border-t border-th-warning/20 divide-y divide-th-warning/10">
+          {pairs.map((pair, i) => (
+            <div key={i} className="px-4 py-3 flex items-start gap-3">
+              <span className="mt-0.5 text-xs font-bold px-1.5 py-0.5 rounded bg-th-warning/20 text-th-warning flex-shrink-0">
+                {pair.similarity}%
+              </span>
+              <div className="flex-1 min-w-0 flex flex-wrap gap-2 items-center text-sm text-th-text-2">
+                <button
+                  onClick={() => onShowDetail({ id: pair.plugin_a.id, name: pair.plugin_a.name, description: pair.plugin_a.description, enabled: pair.plugin_a.enabled } as Plugin)}
+                  className="font-mono text-xs px-2 py-0.5 rounded bg-th-surface-2 hover:bg-th-surface-3 text-th-text transition-colors truncate max-w-[180px]"
+                >
+                  {pair.plugin_a.name}
+                </button>
+                <span className="text-th-text-4 text-xs">≈</span>
+                <button
+                  onClick={() => onShowDetail({ id: pair.plugin_b.id, name: pair.plugin_b.name, description: pair.plugin_b.description, enabled: pair.plugin_b.enabled } as Plugin)}
+                  className="font-mono text-xs px-2 py-0.5 rounded bg-th-surface-2 hover:bg-th-surface-3 text-th-text transition-colors truncate max-w-[180px]"
+                >
+                  {pair.plugin_b.name}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SkillRecommender({ onShowDetail }: { onShowDetail: (p: Plugin) => void }) {
+  const { t } = useTranslation();
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<RecommendResult[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const search = useCallback(async (q: string) => {
+    if (!q.trim()) { setResults([]); setSearched(false); return; }
+    setLoading(true);
+    try {
+      const res = await api.get('/plugins/recommend', { params: { q, limit: 6 } });
+      setResults(res.data.data ?? []);
+      setSearched(true);
+    } catch { setResults([]); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => search(query), 600);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [query, search]);
+
+  return (
+    <div className="rounded-th border border-th-accent/30 bg-gradient-to-br from-th-accent/5 to-transparent p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <Sparkles className="h-4 w-4 text-th-accent" />
+        <span className="text-sm font-semibold text-th-text">{t('plugins.aiRecommend')}</span>
+        <span className="text-xs text-th-text-4">— {t('plugins.aiRecommendHint')}</span>
+      </div>
+
+      {/* 検索入力 */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-th-text-4" />
+        <input
+          type="text"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder={t('plugins.aiRecommendPlaceholder')}
+          className="w-full pl-9 pr-9 py-2 text-sm rounded-th border border-th-border bg-th-surface-1 text-th-text placeholder:text-th-text-4 focus:outline-none focus:border-th-accent"
+        />
+        {query && (
+          <button onClick={() => { setQuery(''); setResults([]); setSearched(false); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-th-text-4 hover:text-th-text">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+
+      {/* 結果 */}
+      {loading && (
+        <div className="flex items-center gap-2 text-xs text-th-text-4 py-1">
+          <div className="w-3 h-3 border-2 border-th-accent/40 border-t-th-accent rounded-full animate-spin" />
+          {t('plugins.searching')}
+        </div>
+      )}
+
+      {!loading && searched && results.length === 0 && (
+        <p className="text-xs text-th-text-4 py-1">{t('plugins.noRecommendations')}</p>
+      )}
+
+      {!loading && results.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          {results.map(r => (
+            <button
+              key={r.id}
+              onClick={() => onShowDetail(r as unknown as Plugin)}
+              className="text-left rounded-th-sm border border-th-border bg-th-surface-1 hover:border-th-accent/50 hover:bg-th-accent/5 px-3 py-2.5 transition-all group"
+            >
+              <div className="flex items-start justify-between gap-1">
+                <span className="text-xs font-mono font-semibold text-th-accent truncate">
+                  /{r.name}
+                </span>
+                <span className="text-[10px] text-th-text-4 shrink-0 flex items-center gap-0.5">
+                  <Zap className="h-2.5 w-2.5" />
+                  {Math.round(r.similarity * 100)}%
+                </span>
+              </div>
+              {r.description && (
+                <p className="text-[11px] text-th-text-3 mt-0.5 line-clamp-2 leading-relaxed">{r.description}</p>
+              )}
+              {r.category && (
+                <span className="mt-1 inline-block text-[10px] px-1.5 py-0.5 rounded bg-th-surface-2 text-th-text-4">{r.category}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PluginsPage() {
   const { t } = useTranslation();
   const [showCreate, setShowCreate] = useState(false);
   const [newRepositoryUrl, setNewRepositoryUrl] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>(ALL_CATEGORY);
+  const [recommendDetail, setRecommendDetail] = useState<Plugin | null>(null);
   const { favorites, toggleFavorite } = useFavorites();
 
   const {
@@ -151,19 +316,19 @@ export default function PluginsPage() {
 
   const categories = [
     ALL_CATEGORY,
-    ...Array.from(new Set((plugins ?? []).map((p) => p.category ?? 'その他'))).sort(),
+    ...Array.from(new Set((plugins ?? []).map((p) => p.category ?? t('plugins.otherCategory')))).sort(),
   ];
 
   const filtered = (plugins ?? []).filter((p) => {
     if (selectedCategory === FAVORITES_TAB) return favorites.has(p.id);
     if (selectedCategory === ALL_CATEGORY) return true;
-    return (p.category ?? 'その他') === selectedCategory;
+    return (p.category ?? t('plugins.otherCategory')) === selectedCategory;
   });
 
   const grouped: Record<string, Plugin[]> = {};
   if (selectedCategory === ALL_CATEGORY) {
     for (const p of filtered) {
-      const cat = p.category ?? 'その他';
+      const cat = p.category ?? t('plugins.otherCategory');
       if (!grouped[cat]) grouped[cat] = [];
       grouped[cat].push(p);
     }
@@ -187,7 +352,7 @@ export default function PluginsPage() {
           {syncResult}
           <button
             onClick={() => setSyncResult('')}
-            aria-label="閉じる"
+            aria-label={t('common.close')}
             className="ml-2 text-th-success/60 hover:text-th-success"
           >
             ✕
@@ -203,14 +368,14 @@ export default function PluginsPage() {
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-th-success text-lg">✓</span>
                 <h2 className="font-semibold text-th-text">
-                  {installResult.imported}件のスキルをインストールしました
+                  {t('plugins.installSuccess', { count: installResult.imported })}
                 </h2>
               </div>
               <p className="text-th-text-4 text-xs">{installResult.repo}</p>
             </div>
             <button
               onClick={() => setInstallResult(null)}
-              aria-label="閉じる"
+              aria-label={t('common.close')}
               className="text-th-text-3 hover:text-th-text text-xl leading-none"
             >
               ✕
@@ -219,7 +384,7 @@ export default function PluginsPage() {
 
           {installResult.designCount > 0 && (
             <div className="bg-th-accent-dim border border-th-accent/20 rounded-th-sm px-3 py-2 text-sm text-th-accent">
-              🎨 {installResult.designCount}種類のデザインガイドが使えるようになりました
+              🎨 {t('plugins.designCollection', { count: installResult.designCount })}
             </div>
           )}
 
@@ -230,12 +395,12 @@ export default function PluginsPage() {
                   <span className="text-xs font-mono bg-th-accent-dim text-th-accent px-2 py-0.5 rounded-th-sm border border-th-accent/20">
                     {skill.name}
                   </span>
-                  {skill.isDesign && <span className="text-xs text-th-text-4">デザインコレクション</span>}
+                  {skill.isDesign && <span className="text-xs text-th-text-4">{t('plugins.designCollectionLabel')}</span>}
                 </div>
                 <p className="text-xs text-th-text-3">{skill.description}</p>
                 {skill.samplePrompt && (
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-th-text-4">例:</span>
+                    <span className="text-xs text-th-text-4">{t('plugins.exampleLabel')}</span>
                     <CopyablePrompt prompt={skill.samplePrompt} />
                   </div>
                 )}
@@ -244,7 +409,7 @@ export default function PluginsPage() {
           </div>
 
           <p className="text-xs text-th-text-4">
-            スキルカードの「使い方」をクリックするとサンプルプロンプトをコピーできます
+            {t('plugins.installSuccessHint')}
           </p>
         </div>
       )}
@@ -262,9 +427,9 @@ export default function PluginsPage() {
               loading={busyOp === 'update'}
               disabled={busyOp !== null && busyOp !== 'update'}
               icon={<RefreshIcon />}
-              title="登録済みの全スキルリポジトリを今すぐ更新してDBに同期"
+              title={t('plugins.updateAllTitle')}
             >
-              スキルアップデート
+              {t('plugins.updateAll')}
             </Button>
             <Button
               variant="ghost"
@@ -274,7 +439,7 @@ export default function PluginsPage() {
               disabled={busyOp !== null && busyOp !== 'fetchUsage'}
               icon={<EditIcon />}
             >
-              使い方取得
+              {t('plugins.fetchUsage')}
             </Button>
             <Button
               variant="ghost"
@@ -284,7 +449,7 @@ export default function PluginsPage() {
               disabled={busyOp !== null && busyOp !== 'categorize'}
               icon={<CategoryIcon />}
             >
-              カテゴリ分類
+              {t('plugins.categorize')}
             </Button>
             <Button
               variant="ghost"
@@ -294,7 +459,7 @@ export default function PluginsPage() {
               disabled={busyOp !== null && busyOp !== 'translate'}
               icon={<EditIcon />}
             >
-              使い方翻訳
+              {t('plugins.translateUsage')}
             </Button>
             <Button
               variant="ghost"
@@ -304,7 +469,7 @@ export default function PluginsPage() {
               disabled={busyOp !== null && busyOp !== 'sync'}
               icon={<SyncIcon />}
             >
-              スキル同期
+              {t('plugins.sync')}
             </Button>
           </div>
 
@@ -318,20 +483,26 @@ export default function PluginsPage() {
         </div>
       </div>
 
+      {/* 重複スキル検知ウィジェット */}
+      <DuplicateDetector onShowDetail={(p) => setRecommendDetail(p)} />
+
+      {/* AIスキル推薦ウィジェット */}
+      <SkillRecommender onShowDetail={(p) => setRecommendDetail(p)} />
+
       {/* 新規作成フォーム */}
       {showCreate && (
         <Card className="p-4 space-y-3">
-          <h2 className="text-sm font-bold text-th-text">スキルをインストール</h2>
+          <h2 className="text-sm font-bold text-th-text">{t('plugins.skillInstallTitle')}</h2>
           <input
             type="text"
             value={newRepositoryUrl}
             onChange={(e) => setNewRepositoryUrl(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleCreate(newRepositoryUrl, onInstallSuccess)}
-            placeholder="GitHubリポジトリURL（例: https://github.com/owner/repo）"
+            placeholder={t('plugins.skillInstallPlaceholder')}
             className="w-full bg-th-surface-1 border border-th-border rounded-th-sm px-3 py-2 text-th-text text-sm placeholder:text-th-text-4 focus:outline-none focus:ring-2 focus:ring-th-accent focus:border-transparent"
             autoFocus
           />
-          <p className="text-th-text-4 text-xs">GitHubのURLを入力するとスキルを自動インストールします。SKILL.md がなくてもREADMEから自動認識します。</p>
+          <p className="text-th-text-4 text-xs">{t('plugins.skillInstallHelp')}</p>
           <div className="flex gap-2">
             <Button
               variant="primary"
@@ -340,7 +511,7 @@ export default function PluginsPage() {
               disabled={!newRepositoryUrl.trim() || busyOp !== null}
               loading={busyOp === 'install'}
             >
-              インストール
+              {t('plugins.install')}
             </Button>
             <Button
               variant="secondary"
@@ -366,7 +537,7 @@ export default function PluginsPage() {
             }`}
           >
             <StarIcon filled={selectedCategory === FAVORITES_TAB} />
-            お気に入り
+            {t('plugins.favoritesTab')}
             <span className={`text-xs ${selectedCategory === FAVORITES_TAB ? 'text-white/70' : 'text-th-text-4'}`}>
               {favorites.size}
             </span>
@@ -375,7 +546,8 @@ export default function PluginsPage() {
           {categories.map((cat) => {
             const count = cat === ALL_CATEGORY
               ? (plugins ?? []).length
-              : (plugins ?? []).filter((p) => (p.category ?? 'その他') === cat).length;
+              : (plugins ?? []).filter((p) => (p.category ?? t('plugins.otherCategory')) === cat).length;
+            const label = cat === ALL_CATEGORY ? t('plugins.allCategory') : cat;
             return (
               <button
                 key={cat}
@@ -386,7 +558,7 @@ export default function PluginsPage() {
                     : 'bg-th-surface-1 hover:bg-th-surface-2 text-th-text-2'
                 }`}
               >
-                {cat}
+                {label}
                 <span className={`ml-1.5 text-xs ${selectedCategory === cat ? 'text-white/70' : 'text-th-text-4'}`}>
                   {count}
                 </span>
@@ -443,6 +615,11 @@ export default function PluginsPage() {
           onToggleFavorite={toggleFavorite}
           t={t}
         />
+      )}
+
+      {/* 推薦結果のDetailモーダル */}
+      {recommendDetail && (
+        <PluginDetailModal plugin={recommendDetail} onClose={() => setRecommendDetail(null)} />
       )}
     </div>
   );

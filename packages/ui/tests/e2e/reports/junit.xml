@@ -1,0 +1,390 @@
+<testsuites id="" name="" tests="11" failures="3" skipped="0" errors="1" time="144.560045">
+<testsuite name="maestro.spec.ts" timestamp="2026-04-07T00:19:17.407Z" hostname="chromium" tests="11" failures="3" skipped="0" time="139.371" errors="1">
+<testcase name="Dashboard › displays stat cards with numeric values" classname="maestro.spec.ts" time="23.459">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|../test-results/maestro-Dashboard-displays-stat-cards-with-numeric-values-chromium/test-failed-1.png]]
+
+[[ATTACHMENT|../test-results/maestro-Dashboard-displays-stat-cards-with-numeric-values-chromium/video.webm]]
+
+[[ATTACHMENT|../test-results/maestro-Dashboard-displays-stat-cards-with-numeric-values-chromium/error-context.md]]
+
+[[ATTACHMENT|../test-results/maestro-Dashboard-displays-stat-cards-with-numeric-values-chromium-retry1/test-failed-1.png]]
+
+[[ATTACHMENT|../test-results/maestro-Dashboard-displays-stat-cards-with-numeric-values-chromium-retry1/video.webm]]
+
+[[ATTACHMENT|../test-results/maestro-Dashboard-displays-stat-cards-with-numeric-values-chromium-retry1/error-context.md]]
+
+[[ATTACHMENT|../test-results/maestro-Dashboard-displays-stat-cards-with-numeric-values-chromium-retry1/trace.zip]]
+]]>
+</system-out>
+<failure message="expect(locator).toBeVisible() failed" type="expect.toBeVisible">
+<![CDATA[  [chromium] › maestro.spec.ts:21:3 › Dashboard › displays stat cards with numeric values ──────────
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: locator('nav')
+    Expected: visible
+    Error: strict mode violation: locator('nav') resolved to 3 elements:
+        1) <nav aria-label="メインナビゲーション" class="flex-1 overflow-y-auto px-3 py-3">…</nav> aka getByRole('navigation', { name: 'メインナビゲーション' })
+        2) <nav aria-label="メインナビゲーション" class="flex-1 overflow-y-auto px-3 py-3">…</nav> aka getByLabel('メインナビゲーション').nth(1)
+        3) <nav aria-label="モバイルナビゲーション" class="fixed inset-x-0 bottom-0 z-30 border-t border-th-border bg-th-bg/95 backdrop-blur-md px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 xl:hidden">…</nav> aka getByLabel('モバイルナビゲーション')
+
+    Call log:
+      - Expect "toBeVisible" with timeout 5000ms
+      - waiting for locator('nav')
+
+
+      47 |
+      48 |     // Check that key sections are visible
+    > 49 |     await expect(page.locator('nav')).toBeVisible();
+         |                                       ^
+      50 |   });
+      51 | });
+      52 |
+        at /Users/naoto/Downloads/maestro/packages/ui/tests/e2e/maestro.spec.ts:49:39
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/maestro-Dashboard-displays-stat-cards-with-numeric-values-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/maestro-Dashboard-displays-stat-cards-with-numeric-values-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/maestro-Dashboard-displays-stat-cards-with-numeric-values-chromium/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: locator('nav')
+    Expected: visible
+    Error: strict mode violation: locator('nav') resolved to 3 elements:
+        1) <nav aria-label="メインナビゲーション" class="flex-1 overflow-y-auto px-3 py-3">…</nav> aka getByRole('navigation', { name: 'メインナビゲーション' })
+        2) <nav aria-label="メインナビゲーション" class="flex-1 overflow-y-auto px-3 py-3">…</nav> aka getByLabel('メインナビゲーション').nth(1)
+        3) <nav aria-label="モバイルナビゲーション" class="fixed inset-x-0 bottom-0 z-30 border-t border-th-border bg-th-bg/95 backdrop-blur-md px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 xl:hidden">…</nav> aka getByLabel('モバイルナビゲーション')
+
+    Call log:
+      - Expect "toBeVisible" with timeout 5000ms
+      - waiting for locator('nav')
+
+
+      47 |
+      48 |     // Check that key sections are visible
+    > 49 |     await expect(page.locator('nav')).toBeVisible();
+         |                                       ^
+      50 |   });
+      51 | });
+      52 |
+        at /Users/naoto/Downloads/maestro/packages/ui/tests/e2e/maestro.spec.ts:49:39
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/maestro-Dashboard-displays-stat-cards-with-numeric-values-chromium-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/maestro-Dashboard-displays-stat-cards-with-numeric-values-chromium-retry1/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/maestro-Dashboard-displays-stat-cards-with-numeric-values-chromium-retry1/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/maestro-Dashboard-displays-stat-cards-with-numeric-values-chromium-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/maestro-Dashboard-displays-stat-cards-with-numeric-values-chromium-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+]]>
+</failure>
+</testcase>
+<testcase name="Plugins page › loads and shows skill cards" classname="maestro.spec.ts" time="6.605">
+</testcase>
+<testcase name="Plugins page › shows usage count badge on skill cards" classname="maestro.spec.ts" time="7.658">
+</testcase>
+<testcase name="Plugins page › AI skill recommender returns results for Japanese query" classname="maestro.spec.ts" time="8.437">
+</testcase>
+<testcase name="Plugins page › AI skill recommender clears results when input is cleared" classname="maestro.spec.ts" time="13.789">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|../test-results/maestro-Plugins-page-AI-sk-b6e82-sults-when-input-is-cleared-chromium/test-failed-1.png]]
+
+[[ATTACHMENT|../test-results/maestro-Plugins-page-AI-sk-b6e82-sults-when-input-is-cleared-chromium/video.webm]]
+
+[[ATTACHMENT|../test-results/maestro-Plugins-page-AI-sk-b6e82-sults-when-input-is-cleared-chromium/error-context.md]]
+
+[[ATTACHMENT|../test-results/maestro-Plugins-page-AI-sk-b6e82-sults-when-input-is-cleared-chromium-retry1/test-failed-1.png]]
+
+[[ATTACHMENT|../test-results/maestro-Plugins-page-AI-sk-b6e82-sults-when-input-is-cleared-chromium-retry1/video.webm]]
+
+[[ATTACHMENT|../test-results/maestro-Plugins-page-AI-sk-b6e82-sults-when-input-is-cleared-chromium-retry1/error-context.md]]
+
+[[ATTACHMENT|../test-results/maestro-Plugins-page-AI-sk-b6e82-sults-when-input-is-cleared-chromium-retry1/trace.zip]]
+]]>
+</system-out>
+<error message="searchInput.triple_click is not a function" type="TypeError">
+<![CDATA[  [chromium] › maestro.spec.ts:169:3 › Plugins page › AI skill recommender clears results when input is cleared 
+
+    TypeError: searchInput.triple_click is not a function
+
+      191 |     const clearButton = page.locator('button').filter({ has: page.locator('svg') }).filter({ hasText: '' }).last();
+      192 |     // Use keyboard shortcut instead as it's more reliable
+    > 193 |     await searchInput.triple_click();
+          |                       ^
+      194 |     await searchInput.press('Backspace');
+      195 |
+      196 |     // Or click the X button (it's rendered as a button with X icon when query is non-empty)
+        at /Users/naoto/Downloads/maestro/packages/ui/tests/e2e/maestro.spec.ts:193:23
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/maestro-Plugins-page-AI-sk-b6e82-sults-when-input-is-cleared-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/maestro-Plugins-page-AI-sk-b6e82-sults-when-input-is-cleared-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/maestro-Plugins-page-AI-sk-b6e82-sults-when-input-is-cleared-chromium/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    TypeError: searchInput.triple_click is not a function
+
+      191 |     const clearButton = page.locator('button').filter({ has: page.locator('svg') }).filter({ hasText: '' }).last();
+      192 |     // Use keyboard shortcut instead as it's more reliable
+    > 193 |     await searchInput.triple_click();
+          |                       ^
+      194 |     await searchInput.press('Backspace');
+      195 |
+      196 |     // Or click the X button (it's rendered as a button with X icon when query is non-empty)
+        at /Users/naoto/Downloads/maestro/packages/ui/tests/e2e/maestro.spec.ts:193:23
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/maestro-Plugins-page-AI-sk-b6e82-sults-when-input-is-cleared-chromium-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/maestro-Plugins-page-AI-sk-b6e82-sults-when-input-is-cleared-chromium-retry1/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/maestro-Plugins-page-AI-sk-b6e82-sults-when-input-is-cleared-chromium-retry1/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/maestro-Plugins-page-AI-sk-b6e82-sults-when-input-is-cleared-chromium-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/maestro-Plugins-page-AI-sk-b6e82-sults-when-input-is-cleared-chromium-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+]]>
+</error>
+</testcase>
+<testcase name="Plugins page › category filter tab narrows displayed skills" classname="maestro.spec.ts" time="7.11">
+</testcase>
+<testcase name="Navigation › sidebar does not contain a standalone &quot;スキル&quot; nav link" classname="maestro.spec.ts" time="25.534">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|../test-results/maestro-Navigation-sidebar-3af6e-n-a-standalone-スキル-nav-link-chromium/test-failed-1.png]]
+
+[[ATTACHMENT|../test-results/maestro-Navigation-sidebar-3af6e-n-a-standalone-スキル-nav-link-chromium/video.webm]]
+
+[[ATTACHMENT|../test-results/maestro-Navigation-sidebar-3af6e-n-a-standalone-スキル-nav-link-chromium/error-context.md]]
+
+[[ATTACHMENT|../test-results/maestro-Navigation-sidebar-3af6e-n-a-standalone-スキル-nav-link-chromium-retry1/test-failed-1.png]]
+
+[[ATTACHMENT|../test-results/maestro-Navigation-sidebar-3af6e-n-a-standalone-スキル-nav-link-chromium-retry1/video.webm]]
+
+[[ATTACHMENT|../test-results/maestro-Navigation-sidebar-3af6e-n-a-standalone-スキル-nav-link-chromium-retry1/error-context.md]]
+
+[[ATTACHMENT|../test-results/maestro-Navigation-sidebar-3af6e-n-a-standalone-スキル-nav-link-chromium-retry1/trace.zip]]
+]]>
+</system-out>
+<failure message="expect(locator).toBeVisible() failed" type="expect.toBeVisible">
+<![CDATA[  [chromium] › maestro.spec.ts:272:3 › Navigation › sidebar does not contain a standalone "スキル" nav link 
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: locator('nav a[href="/plugins"]')
+    Expected: visible
+    Error: strict mode violation: locator('nav a[href="/plugins"]') resolved to 3 elements:
+        1) <a href="/plugins" class="group flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-all duration-150 text-[#5e5d59] font-normal hover:text-[#141413] hover:bg-[#e8e6dc]">…</a> aka getByRole('link', { name: 'プラグイン' })
+        2) <a href="/plugins" class="group flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-all duration-150 text-[#5e5d59] font-normal hover:text-[#141413] hover:bg-[#e8e6dc]">…</a> aka locator('a').filter({ hasText: 'プラグイン' }).nth(1)
+        3) <a href="/plugins" class="flex flex-col items-center justify-center gap-1 rounded-th-md px-2 py-2 text-[10px] font-medium transition-colors text-th-text-4 hover:text-th-text-2">…</a> aka getByLabel('モバイルナビゲーション').locator('a').filter({ hasText: 'プラグイン' })
+
+    Call log:
+      - Expect "toBeVisible" with timeout 5000ms
+      - waiting for locator('nav a[href="/plugins"]')
+
+
+      287 |     // The plugins nav link (labeled "プラグイン" or similar) should be present
+      288 |     const pluginsNavLink = page.locator('nav a[href="/plugins"]');
+    > 289 |     await expect(pluginsNavLink).toBeVisible();
+          |                                  ^
+      290 |   });
+      291 |
+      292 |   test('plugins nav link navigates to plugins page with スキル title', async ({ page }) => {
+        at /Users/naoto/Downloads/maestro/packages/ui/tests/e2e/maestro.spec.ts:289:34
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/maestro-Navigation-sidebar-3af6e-n-a-standalone-スキル-nav-link-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/maestro-Navigation-sidebar-3af6e-n-a-standalone-スキル-nav-link-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/maestro-Navigation-sidebar-3af6e-n-a-standalone-スキル-nav-link-chromium/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: locator('nav a[href="/plugins"]')
+    Expected: visible
+    Error: strict mode violation: locator('nav a[href="/plugins"]') resolved to 3 elements:
+        1) <a href="/plugins" class="group flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-all duration-150 text-[#5e5d59] font-normal hover:text-[#141413] hover:bg-[#e8e6dc]">…</a> aka getByRole('link', { name: 'プラグイン' })
+        2) <a href="/plugins" class="group flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-all duration-150 text-[#5e5d59] font-normal hover:text-[#141413] hover:bg-[#e8e6dc]">…</a> aka locator('a').filter({ hasText: 'プラグイン' }).nth(1)
+        3) <a href="/plugins" class="flex flex-col items-center justify-center gap-1 rounded-th-md px-2 py-2 text-[10px] font-medium transition-colors text-th-text-4 hover:text-th-text-2">…</a> aka getByLabel('モバイルナビゲーション').locator('a').filter({ hasText: 'プラグイン' })
+
+    Call log:
+      - Expect "toBeVisible" with timeout 5000ms
+      - waiting for locator('nav a[href="/plugins"]')
+
+
+      287 |     // The plugins nav link (labeled "プラグイン" or similar) should be present
+      288 |     const pluginsNavLink = page.locator('nav a[href="/plugins"]');
+    > 289 |     await expect(pluginsNavLink).toBeVisible();
+          |                                  ^
+      290 |   });
+      291 |
+      292 |   test('plugins nav link navigates to plugins page with スキル title', async ({ page }) => {
+        at /Users/naoto/Downloads/maestro/packages/ui/tests/e2e/maestro.spec.ts:289:34
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/maestro-Navigation-sidebar-3af6e-n-a-standalone-スキル-nav-link-chromium-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/maestro-Navigation-sidebar-3af6e-n-a-standalone-スキル-nav-link-chromium-retry1/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/maestro-Navigation-sidebar-3af6e-n-a-standalone-スキル-nav-link-chromium-retry1/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/maestro-Navigation-sidebar-3af6e-n-a-standalone-スキル-nav-link-chromium-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/maestro-Navigation-sidebar-3af6e-n-a-standalone-スキル-nav-link-chromium-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+]]>
+</failure>
+</testcase>
+<testcase name="Navigation › plugins nav link navigates to plugins page with スキル title" classname="maestro.spec.ts" time="29.651">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|../test-results/maestro-Navigation-plugins-25465-plugins-page-with-スキル-title-chromium/test-failed-1.png]]
+
+[[ATTACHMENT|../test-results/maestro-Navigation-plugins-25465-plugins-page-with-スキル-title-chromium/video.webm]]
+
+[[ATTACHMENT|../test-results/maestro-Navigation-plugins-25465-plugins-page-with-スキル-title-chromium/error-context.md]]
+
+[[ATTACHMENT|../test-results/maestro-Navigation-plugins-25465-plugins-page-with-スキル-title-chromium-retry1/test-failed-1.png]]
+
+[[ATTACHMENT|../test-results/maestro-Navigation-plugins-25465-plugins-page-with-スキル-title-chromium-retry1/video.webm]]
+
+[[ATTACHMENT|../test-results/maestro-Navigation-plugins-25465-plugins-page-with-スキル-title-chromium-retry1/error-context.md]]
+
+[[ATTACHMENT|../test-results/maestro-Navigation-plugins-25465-plugins-page-with-スキル-title-chromium-retry1/trace.zip]]
+]]>
+</system-out>
+<failure message="expect(locator).toBeVisible() failed" type="expect.toBeVisible">
+<![CDATA[  [chromium] › maestro.spec.ts:292:3 › Navigation › plugins nav link navigates to plugins page with スキル title 
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: locator('nav a[href="/plugins"]')
+    Expected: visible
+    Error: strict mode violation: locator('nav a[href="/plugins"]') resolved to 3 elements:
+        1) <a href="/plugins" class="group flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-all duration-150 text-[#5e5d59] font-normal hover:text-[#141413] hover:bg-[#e8e6dc]">…</a> aka getByRole('link', { name: 'プラグイン' })
+        2) <a href="/plugins" class="group flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-all duration-150 text-[#5e5d59] font-normal hover:text-[#141413] hover:bg-[#e8e6dc]">…</a> aka locator('a').filter({ hasText: 'プラグイン' }).nth(1)
+        3) <a href="/plugins" class="flex flex-col items-center justify-center gap-1 rounded-th-md px-2 py-2 text-[10px] font-medium transition-colors text-th-text-4 hover:text-th-text-2">…</a> aka getByLabel('モバイルナビゲーション').locator('a').filter({ hasText: 'プラグイン' })
+
+    Call log:
+      - Expect "toBeVisible" with timeout 5000ms
+      - waiting for locator('nav a[href="/plugins"]')
+
+
+      298 |     // Click plugins nav link
+      299 |     const pluginsNavLink = page.locator('nav a[href="/plugins"]');
+    > 300 |     await expect(pluginsNavLink).toBeVisible();
+          |                                  ^
+      301 |
+      302 |     const pluginsResponsePromise = page.waitForResponse(
+      303 |       (res) => res.url().includes('/api/plugins') && res.status() === 200,
+        at /Users/naoto/Downloads/maestro/packages/ui/tests/e2e/maestro.spec.ts:300:34
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/maestro-Navigation-plugins-25465-plugins-page-with-スキル-title-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/maestro-Navigation-plugins-25465-plugins-page-with-スキル-title-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/maestro-Navigation-plugins-25465-plugins-page-with-スキル-title-chromium/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: locator('nav a[href="/plugins"]')
+    Expected: visible
+    Error: strict mode violation: locator('nav a[href="/plugins"]') resolved to 3 elements:
+        1) <a href="/plugins" class="group flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-all duration-150 text-[#5e5d59] font-normal hover:text-[#141413] hover:bg-[#e8e6dc]">…</a> aka getByRole('link', { name: 'プラグイン' })
+        2) <a href="/plugins" class="group flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-all duration-150 text-[#5e5d59] font-normal hover:text-[#141413] hover:bg-[#e8e6dc]">…</a> aka locator('a').filter({ hasText: 'プラグイン' }).nth(1)
+        3) <a href="/plugins" class="flex flex-col items-center justify-center gap-1 rounded-th-md px-2 py-2 text-[10px] font-medium transition-colors text-th-text-4 hover:text-th-text-2">…</a> aka getByLabel('モバイルナビゲーション').locator('a').filter({ hasText: 'プラグイン' })
+
+    Call log:
+      - Expect "toBeVisible" with timeout 5000ms
+      - waiting for locator('nav a[href="/plugins"]')
+
+
+      298 |     // Click plugins nav link
+      299 |     const pluginsNavLink = page.locator('nav a[href="/plugins"]');
+    > 300 |     await expect(pluginsNavLink).toBeVisible();
+          |                                  ^
+      301 |
+      302 |     const pluginsResponsePromise = page.waitForResponse(
+      303 |       (res) => res.url().includes('/api/plugins') && res.status() === 200,
+        at /Users/naoto/Downloads/maestro/packages/ui/tests/e2e/maestro.spec.ts:300:34
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/maestro-Navigation-plugins-25465-plugins-page-with-スキル-title-chromium-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/maestro-Navigation-plugins-25465-plugins-page-with-スキル-title-chromium-retry1/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/maestro-Navigation-plugins-25465-plugins-page-with-スキル-title-chromium-retry1/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/maestro-Navigation-plugins-25465-plugins-page-with-スキル-title-chromium-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/maestro-Navigation-plugins-25465-plugins-page-with-スキル-title-chromium-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+]]>
+</failure>
+</testcase>
+<testcase name="Issues page › loads issue list" classname="maestro.spec.ts" time="6.445">
+</testcase>
+<testcase name="Projects page › loads project list" classname="maestro.spec.ts" time="7.606">
+</testcase>
+<testcase name="Activity page › loads activity log" classname="maestro.spec.ts" time="3.077">
+</testcase>
+</testsuite>
+</testsuites>

@@ -4,6 +4,10 @@ import { execSync } from 'child_process';
 
 export const SCREENSHOTS_DIR = path.join(__dirname, '..', 'screenshots');
 
+// BASE_URL env var controls which server is targeted.
+// Defaults to port 5173 (Vite dev server); set BASE_URL=http://localhost for Nginx.
+const BASE_URL = process.env.BASE_URL ?? 'http://localhost:5173';
+
 interface AuthCredentials {
   apiKey: string;
   companyId: string;
@@ -30,7 +34,22 @@ async function getOrCreateTestUser(): Promise<AuthCredentials> {
       return HARDCODED_CREDENTIALS;
     }
   } catch {
-    // Fall through to registration
+    // Fall through to login
+  }
+
+  // Try to login with known credentials
+  try {
+    const result = execSync(
+      `curl -s -X POST http://localhost:3000/api/auth/login -H "Content-Type: application/json" -d '{"email":"test@maestro.local","password":"Password123!"}'`,
+      { timeout: 10000 }
+    ).toString();
+
+    const data = JSON.parse(result);
+    if (data.apiKey) {
+      return { apiKey: data.apiKey, companyId: data.companyId, userId: data.userId };
+    }
+  } catch {
+    // Ignore
   }
 
   // Try to register a new account
@@ -53,7 +72,7 @@ async function getOrCreateTestUser(): Promise<AuthCredentials> {
 
 export async function injectAuth(page: Page): Promise<void> {
   const creds = await getOrCreateTestUser();
-  await page.goto('http://localhost:5173/login');
+  await page.goto(`${BASE_URL}/login`);
   await page.evaluate((c) => {
     localStorage.setItem('apiKey', c.apiKey);
     localStorage.setItem('companyId', c.companyId);

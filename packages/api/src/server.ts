@@ -8,18 +8,13 @@ import { companiesRouter } from './routes/companies';
 import { authRouter } from './routes/auth';
 import { orgRouter } from './routes/org';
 import { agentsRouter } from './routes/agents';
-import { issuesRouter } from './routes/issues';
-import { projectsRouter } from './routes/projects';
 import { costsRouter } from './routes/costs';
 import { routinesRouter } from './routes/routines';
 import { jobsRouter } from './routes/jobs';
-import { approvalsRouter } from './routes/approvals';
-import { activityRouter } from './routes/activity';
 import { pluginsRouter } from './routes/plugins';
 import { settingsRouter } from './routes/settings';
 import { handoffsRouter } from './routes/handoffs';
 import { tasksRouter } from './routes/tasks';
-import { instructionsRouter } from './routes/instructions';
 import { sessionSummariesRouter } from './routes/session-summaries';
 import { sessionContextRouter } from './routes/session-context';
 import { noteArticlesRouter } from './routes/note-articles';
@@ -33,6 +28,7 @@ import { notificationsRouter } from './routes/notifications';
 import { searchRouter } from './routes/search';
 import { userRouter } from './routes/user';
 import { planeRouter } from './routes/plane';
+import { embedRouter } from './routes/embed';
 import { errorHandler } from './middleware/error-handler';
 import { authMiddleware } from './middleware/auth';
 import { activityLogger } from './middleware/activity-logger';
@@ -127,18 +123,13 @@ export function createApp(): Express {
   app.use('/api/org', orgRouter);
   app.use('/api/companies', companiesRouter);
   app.use('/api/agents', agentsRouter);
-  app.use('/api/issues', issuesRouter);
-  app.use('/api/projects', projectsRouter);
   app.use('/api/costs', costsRouter);
   app.use('/api/routines', routinesRouter);
   app.use('/api/jobs', jobsRouter);
-  app.use('/api/approvals', approvalsRouter);
-  app.use('/api/activity', activityRouter);
   app.use('/api/plugins', pluginsRouter);
   app.use('/api/settings', settingsRouter);
   app.use('/api/handoffs', handoffsRouter);
   app.use('/api/tasks', tasksRouter);
-  app.use('/api/instructions', instructionsRouter);
   app.use('/api/session-summaries', sessionSummariesRouter);
   app.use('/api/session-context', sessionContextRouter);
   app.use('/api/note-articles', noteArticlesRouter);
@@ -152,6 +143,7 @@ export function createApp(): Express {
   app.use('/api/search', searchRouter);
   app.use('/api/user', userRouter);
   app.use('/api/plane', planeRouter);
+  app.use('/api/embed', embedRouter);
 
   // 404ハンドラ（未定義ルートへのリクエストをJSON形式で返す）
   app.use((_req, res) => {

@@ -9,14 +9,8 @@ import DashboardPage from './pages/DashboardPage.tsx';
 import InboxPage from './pages/InboxPage.tsx';
 import AgentsPage from './pages/agents/AgentsPage.tsx';
 import AgentDetailPage from './pages/agents/AgentDetailPage.tsx';
-import IssuesPage from './pages/issues/IssuesPage.tsx';
-import IssueDetailPage from './pages/issues/IssueDetailPage.tsx';
-import ProjectsPage from './pages/projects/ProjectsPage.tsx';
-import ProjectDetailPage from './pages/projects/ProjectDetailPage.tsx';
 import RoutinesPage from './pages/routines/RoutinesPage.tsx';
-import ApprovalsPage from './pages/approvals/ApprovalsPage.tsx';
 import CostsPage from './pages/costs/CostsPage.tsx';
-import ActivityPage from './pages/ActivityPage.tsx';
 import SessionsPage from './pages/sessions/SessionsPage.tsx';
 import SessionDetailPage from './pages/sessions/SessionDetailPage.tsx';
 import UserProfilePage from './pages/profile/UserProfilePage.tsx';
@@ -67,14 +61,8 @@ export default function App() {
           <Route path="inbox" element={<InboxPage />} />
           <Route path="agents" element={<AgentsPage />} />
           <Route path="agents/:id" element={<AgentDetailPage />} />
-          <Route path="issues" element={<IssuesPage />} />
-          <Route path="issues/:id" element={<IssueDetailPage />} />
-          <Route path="projects" element={<ProjectsPage />} />
-          <Route path="projects/:id" element={<ProjectDetailPage />} />
           <Route path="routines" element={<RoutinesPage />} />
-          <Route path="approvals" element={<ApprovalsPage />} />
           <Route path="costs" element={<CostsPage />} />
-          <Route path="activity" element={<ActivityPage />} />
           <Route path="sessions" element={<SessionsPage />} />
           <Route path="sessions/:id" element={<SessionDetailPage />} />
           <Route path="plugins" element={<PluginsPage />} />

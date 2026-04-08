@@ -111,27 +111,41 @@ function getNextRunAt(cron: string): Date | null {
   return null;
 }
 
-/** cron式を人間が読める日本語に変換 */
+/** cron式を人間が読める文字列に変換 */
 function cronToHuman(cron: string, lang: string): string {
   const parts = cron.trim().split(/\s+/);
   if (parts.length < 5) return cron;
 
   const [min, hour, dayOfMonth, month, dayOfWeek] = parts;
-  const isJa = lang === 'ja';
 
-  const dayNames = isJa
-    ? ['日', '月', '火', '水', '木', '金', '土']
-    : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const dayNamesMap: Record<string, string[]> = {
+    ja: ['日', '月', '火', '水', '木', '金', '土'],
+    zh: ['日', '一', '二', '三', '四', '五', '六'],
+    en: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+  };
+  const dayNames = dayNamesMap[lang] ?? dayNamesMap.en;
 
   let schedule = '';
 
   if (dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
-    schedule = isJa ? '毎日' : 'Every day';
+    schedule = lang === 'en' ? 'Every day' : lang === 'zh' ? '每天' : '毎日';
   } else if (dayOfMonth === '*' && month === '*' && dayOfWeek !== '*') {
-    const days = dayOfWeek.split(',').map(d => dayNames[Number(d)] ?? d).join(isJa ? '・' : ', ');
-    schedule = isJa ? `毎週 ${days}曜日` : `Every ${days}`;
+    const days = dayOfWeek.split(',').map(d => dayNames[Number(d)] ?? d);
+    if (lang === 'en') {
+      schedule = `Every ${days.join(', ')}`;
+    } else if (lang === 'zh') {
+      schedule = `每周${days.join('・')}`;
+    } else {
+      schedule = `毎週 ${days.join('・')}曜日`;
+    }
   } else if (month === '*' && dayOfWeek === '*' && dayOfMonth !== '*') {
-    schedule = isJa ? `毎月 ${dayOfMonth}日` : `${dayOfMonth}th of every month`;
+    if (lang === 'en') {
+      schedule = `${dayOfMonth}th of every month`;
+    } else if (lang === 'zh') {
+      schedule = `每月${dayOfMonth}日`;
+    } else {
+      schedule = `毎月 ${dayOfMonth}日`;
+    }
   } else {
     return cron;
   }
@@ -155,11 +169,12 @@ function formatDate(dateStr: string): string {
 
 
 function RoutineCard({ routine, t }: { routine: Routine; t: (k: string, o?: Record<string, unknown>) => string }) {
+  const { i18n } = useTranslation();
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
-  const lang = t('common.loading') === 'Loading...' ? 'en' : 'ja';
+  const lang = i18n.language ?? 'ja';
   const nextRunAt = getNextRunAt(routine.cron_expression);
 
   const { data: runs, isLoading: runsLoading } = useQuery<RoutineRun[]>(

@@ -1,6 +1,6 @@
 import { Router, type Router as RouterType } from 'express';
 import { getDb, artifacts } from '@maestro/db';
-import { eq, and, desc, ilike, or } from 'drizzle-orm';
+import { eq, and, desc, ilike, or, sql } from 'drizzle-orm';
 import { sanitizeString, sanitizePagination } from '../middleware/validate';
 
 export const artifactsRouter: RouterType = Router();
@@ -185,4 +185,26 @@ artifactsRouter.delete('/:id', async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// GET /api/artifacts/similar?q=text&limit=5 — セマンティック検索
+artifactsRouter.get('/similar', async (req, res, next) => {
+  try {
+    const q = String(req.query.q ?? '').trim();
+    if (!q) { res.status(400).json({ error: 'クエリが必要です' }); return; }
+    const limit = Math.min(Number(req.query.limit ?? 5), 20);
+    const { embedQuery } = await import('../services/embedding.js');
+    const vec = await embedQuery(q);
+    const db = getDb();
+    const rows = await db.execute(sql`
+      SELECT id, type, title, description, url, file_path, tags, session_id, created_at,
+             1 - (embedding <=> ${`[${vec.join(',')}]`}::vector) AS similarity
+      FROM artifacts
+      WHERE company_id = ${req.companyId!}
+        AND embedding IS NOT NULL
+      ORDER BY embedding <=> ${`[${vec.join(',')}]`}::vector
+      LIMIT ${limit}
+    `);
+    res.json({ data: rows.rows });
+  } catch (err) { next(err); }
 });

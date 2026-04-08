@@ -1,5 +1,11 @@
-import { pgTable, text, varchar, timestamp, uuid, index, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, text, varchar, timestamp, uuid, index, jsonb, customType } from 'drizzle-orm/pg-core';
 import { companies } from './group-a';
+
+const vector384 = customType<{ data: number[]; driverData: string }>({
+  dataType() { return 'vector(384)'; },
+  toDriver(value: number[]): string { return `[${value.join(',')}]`; },
+  fromDriver(value: string): number[] { return value.slice(1, -1).split(',').map(Number); },
+});
 
 // L1: artifacts（成果物記録）
 export const artifacts = pgTable('artifacts', {
@@ -15,6 +21,7 @@ export const artifacts = pgTable('artifacts', {
   file_path: text('file_path'),        // ファイルアーティファクト
   tags: text('tags').array(),
   meta: jsonb('meta'),                 // 追加メタデータ (サイズ、言語、ステータスなど)
+  embedding: vector384('embedding'),   // セマンティック検索用ベクトル
   created_at: timestamp('created_at').defaultNow(),
   updated_at: timestamp('updated_at').defaultNow(),
 }, (table) => ({

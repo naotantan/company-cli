@@ -6,7 +6,6 @@ import LanguageSection from './LanguageSection.tsx';
 import BackupSection from './BackupSection.tsx';
 import ClaudeIntegrationSection from './ClaudeIntegrationSection.tsx';
 import PlaneSection from './PlaneSection.tsx';
-import AutoApproveSection from './AutoApproveSection.tsx';
 import useSettings from './useSettings.ts';
 
 export default function SettingsPage() {
@@ -68,9 +67,6 @@ export default function SettingsPage() {
       <ClaudeIntegrationSection />
 
       <PlaneSection />
-
-      {/* 自動承認 */}
-      <AutoApproveSection />
 
       {/* スキル統計リセット */}
       <div className="bg-th-surface-0 rounded-th-md p-6 border border-th-border space-y-4">

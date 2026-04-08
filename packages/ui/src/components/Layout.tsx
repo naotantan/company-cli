@@ -4,10 +4,10 @@ import { useTranslation } from '@maestro/i18n';
 import { authStore } from '../stores/auth.ts';
 import { clsx } from 'clsx';
 import {
-  Activity, BarChart2, Bell, Bot, BookOpen, Brain, Briefcase,
-  Building2, ChefHat, Clock, ExternalLink, FolderKanban,
+  BarChart2, Bell, Bot, Brain, Briefcase,
+  Building2, ChefHat, Clock, ExternalLink,
   Gauge, Globe, LogOut, Menu, Package, Receipt, Search,
-  Settings, ShieldCheck, Sparkles, Wand2, Workflow, X,
+  Settings, Sparkles, Wand2, Workflow, X,
   type LucideIcon,
 } from 'lucide-react';
 import { CommandPalette } from './ui/CommandPalette.tsx';
@@ -21,16 +21,12 @@ function buildNavSections(planeUrl: string): NavSection[] { return [
     titleKey: 'layout.sectionHome',
     items: [
       { to: '/', labelKey: 'nav.dashboard', icon: Gauge },
-      { to: '/activity', labelKey: 'nav.activity', icon: Activity },
     ],
   },
   {
     // タスク管理 — やるべき仕事を管理する
     titleKey: 'layout.sectionTasks',
     items: [
-      { to: '/issues', labelKey: 'nav.issues', icon: BookOpen },
-      { to: '/projects', labelKey: 'nav.projects', icon: FolderKanban },
-      { to: '/approvals', labelKey: 'nav.approvals', icon: ShieldCheck },
       { to: planeUrl, labelKey: 'nav.plane', icon: ExternalLink, external: true },
     ],
   },

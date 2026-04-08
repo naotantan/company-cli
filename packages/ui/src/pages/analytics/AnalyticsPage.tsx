@@ -1,18 +1,17 @@
 import { useState } from 'react';
 import { useQuery } from 'react-query';
-import { BarChart2, CheckSquare, Zap, Target } from 'lucide-react';
+import { BarChart2, CheckSquare, Zap } from 'lucide-react';
 import api from '../../lib/api.ts';
 import { Alert, LoadingSpinner, StatGrid } from '../../components/ui';
+import { useTranslation } from '@maestro/i18n';
 
 interface AnalyticsOverview {
   total_sessions?: number;
   completed_tasks?: number;
   skill_usage_count?: number;
-  resolved_issues?: number;
   sessions_change?: string;
   tasks_change?: string;
   skill_change?: string;
-  issues_change?: string;
 }
 
 interface SkillStat {
@@ -20,14 +19,15 @@ interface SkillStat {
   count: number;
 }
 
-const PERIOD_OPTIONS = [
-  { value: '7', label: '過去7日' },
-  { value: '30', label: '過去30日' },
-  { value: '90', label: '過去90日' },
-];
-
 export default function AnalyticsPage() {
+  const { t } = useTranslation();
   const [period, setPeriod] = useState('30');
+
+  const periodOptions = [
+    { value: '7',  label: t('analytics.period7') },
+    { value: '30', label: t('analytics.period30') },
+    { value: '90', label: t('analytics.period90') },
+  ];
 
   const { data: overview, isLoading: overviewLoading, error: overviewError } = useQuery<AnalyticsOverview>(
     ['analytics-overview', period],
@@ -43,41 +43,34 @@ export default function AnalyticsPage() {
 
   const stats = [
     {
-      label: '総セッション数',
+      label: t('analytics.totalSessions'),
       value: overview?.total_sessions ?? '—',
       change: overview?.sessions_change,
       changeType: (overview?.sessions_change ?? '').startsWith('+') ? 'up' as const : undefined,
       icon: <BarChart2 size={16} />,
     },
     {
-      label: '完了タスク数',
+      label: t('analytics.completedTasks'),
       value: overview?.completed_tasks ?? '—',
       change: overview?.tasks_change,
       changeType: (overview?.tasks_change ?? '').startsWith('+') ? 'up' as const : undefined,
       icon: <CheckSquare size={16} />,
     },
     {
-      label: 'スキル使用回数',
+      label: t('analytics.skillUsage'),
       value: overview?.skill_usage_count ?? '—',
       change: overview?.skill_change,
       changeType: (overview?.skill_change ?? '').startsWith('+') ? 'up' as const : undefined,
       icon: <Zap size={16} />,
-    },
-    {
-      label: '課題解決数',
-      value: overview?.resolved_issues ?? '—',
-      change: overview?.issues_change,
-      changeType: (overview?.issues_change ?? '').startsWith('+') ? 'up' as const : undefined,
-      icon: <Target size={16} />,
     },
   ];
 
   return (
     <div className="p-6 space-y-6 max-w-5xl">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h1 className="text-3xl font-bold">分析</h1>
+        <h1 className="text-3xl font-bold">{t('analytics.title')}</h1>
         <div style={{ display: 'flex', gap: 6 }}>
-          {PERIOD_OPTIONS.map((opt) => (
+          {periodOptions.map((opt) => (
             <button
               key={opt.value}
               onClick={() => setPeriod(opt.value)}
@@ -97,10 +90,10 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      {overviewError != null && <Alert variant="danger" message="分析データの読み込みに失敗しました" />}
+      {overviewError != null && <Alert variant="danger" message={t('analytics.loadError')} />}
 
       {overviewLoading ? (
-        <LoadingSpinner text="データを読み込み中..." />
+        <LoadingSpinner text={t('analytics.loading')} />
       ) : (
         <StatGrid stats={stats} />
       )}
@@ -124,14 +117,14 @@ export default function AnalyticsPage() {
             color: 'var(--color-text)',
           }}
         >
-          スキル使用 Top 10（過去{period}日）
+          {t('analytics.skillTop10', { period })}
         </div>
         <div style={{ padding: '20px 24px' }}>
           {skillsLoading ? (
-            <LoadingSpinner text="スキル統計を読み込み中..." />
+            <LoadingSpinner text={t('analytics.skillLoading')} />
           ) : !skillStats || skillStats.length === 0 ? (
             <div style={{ color: 'var(--color-text-3)', fontSize: 13, textAlign: 'center', padding: '20px 0' }}>
-              データがありません
+              {t('analytics.noData')}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

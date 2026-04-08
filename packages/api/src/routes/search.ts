@@ -1,10 +1,10 @@
 import { Router, type Router as RouterType } from 'express';
-import { getDb, issues, session_summaries, plugins } from '@maestro/db';
+import { getDb, session_summaries, plugins } from '@maestro/db';
 import { eq, and, ilike, or, desc } from 'drizzle-orm';
 
 export const searchRouter: RouterType = Router();
 
-// GET /api/search?q=<query> — issues/session_summaries/plugins を横断検索
+// GET /api/search?q=<query> — session_summaries/plugins を横断検索
 searchRouter.get('/', async (req, res, next) => {
   try {
     const q = String(req.query.q ?? '').trim();
@@ -17,26 +17,7 @@ searchRouter.get('/', async (req, res, next) => {
     const searchTerm = `%${q}%`;
     const db = getDb();
 
-    const [issueRows, sessionRows, pluginRows] = await Promise.all([
-      db
-        .select({
-          id: issues.id,
-          identifier: issues.identifier,
-          title: issues.title,
-          status: issues.status,
-          priority: issues.priority,
-          created_at: issues.created_at,
-        })
-        .from(issues)
-        .where(
-          and(
-            eq(issues.company_id, req.companyId!),
-            or(ilike(issues.title, searchTerm), ilike(issues.description, searchTerm))!
-          )
-        )
-        .orderBy(desc(issues.created_at))
-        .limit(20),
-
+    const [sessionRows, pluginRows] = await Promise.all([
       db
         .select({
           id: session_summaries.id,
@@ -78,7 +59,6 @@ searchRouter.get('/', async (req, res, next) => {
 
     res.json({
       data: {
-        issues: issueRows,
         sessions: sessionRows,
         plugins: pluginRows,
       },

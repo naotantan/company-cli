@@ -50,5 +50,8 @@
     "budget-monitor",
     "claude",
     "gemini"
-  ]
+  ],
+  "dependencies": {
+    "sharp": "^0.34.5"
+  }
 }

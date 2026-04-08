@@ -1,6 +1,6 @@
 import { Router, type Router as RouterType } from 'express';
-import { getDb, plugins, session_summaries, issues, agents } from '@maestro/db';
-import { eq, and, desc, gte, sql, count } from 'drizzle-orm';
+import { getDb, plugins, session_summaries, agents } from '@maestro/db';
+import { eq, and, desc, gte, sql } from 'drizzle-orm';
 
 export const analyticsRouter: RouterType = Router();
 
@@ -82,22 +82,12 @@ analyticsRouter.get('/overview', async (req, res, next) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const [activeAgentsResult, openIssuesResult, todaySessionsResult, totalSkillsResult] = await Promise.all([
+    const [activeAgentsResult, todaySessionsResult, totalSkillsResult] = await Promise.all([
       // 稼働中エージェント数
       db
         .select({ cnt: sql<number>`count(*)::int` })
         .from(agents)
         .where(and(eq(agents.company_id, req.companyId!), eq(agents.enabled, true))),
-      // 未完了Issues数
-      db
-        .select({ cnt: sql<number>`count(*)::int` })
-        .from(issues)
-        .where(
-          and(
-            eq(issues.company_id, req.companyId!),
-            sql`${issues.status} NOT IN ('done', 'closed', 'cancelled')`
-          )
-        ),
       // 本日のセッション数
       db
         .select({ cnt: sql<number>`count(*)::int` })
@@ -118,7 +108,6 @@ analyticsRouter.get('/overview', async (req, res, next) => {
     res.json({
       data: {
         active_agents: activeAgentsResult[0]?.cnt ?? 0,
-        open_issues: openIssuesResult[0]?.cnt ?? 0,
         today_sessions: todaySessionsResult[0]?.cnt ?? 0,
         total_skills: totalSkillsResult[0]?.cnt ?? 0,
       },

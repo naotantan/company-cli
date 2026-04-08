@@ -52,13 +52,24 @@ export async function authMiddleware(
 
   try {
     const db = getDb();
-    // 全APIキーを取得してbcryptで比較（プレフィックスマッチングは最適化）
     // プレフィックスは2番目の_までを含む（例: comp_live_）
+    // 正規形式: <env>_<type>_<random> — アンダースコアが2つ以上必要
     const firstUnderscore = rawKey.indexOf('_');
-    const secondUnderscore = rawKey.indexOf('_', firstUnderscore + 1);
-    const prefix = secondUnderscore !== -1
-      ? rawKey.substring(0, secondUnderscore + 1)
-      : rawKey.substring(0, firstUnderscore + 1);
+    const secondUnderscore = firstUnderscore !== -1
+      ? rawKey.indexOf('_', firstUnderscore + 1)
+      : -1;
+
+    // アンダースコアが2つ未満の場合は正規キー形式でないため早期拒否
+    if (firstUnderscore <= 0 || secondUnderscore === -1) {
+      logAuthFailure(req, 'invalid_api_key');
+      res.status(401).json({
+        error: 'invalid_api_key',
+        message: '無効なAPIキーです。',
+      });
+      return;
+    }
+
+    const prefix = rawKey.substring(0, secondUnderscore + 1);
     const keys = await db
       .select()
       .from(board_api_keys)
@@ -78,9 +89,9 @@ export async function authMiddleware(
     let matchedKey = null;
     try {
       for (const key of keys) {
-        if (!key.key_hash) continue; // ハッシュがない場合はスキップ
+        if (!key.enabled || !key.key_hash) continue; // 無効キー・ハッシュなしは先にスキップ（DoS対策）
         const isMatch = await bcrypt.compare(rawKey, key.key_hash);
-        if (isMatch && key.enabled) {
+        if (isMatch) {
           matchedKey = key;
           break;
         }

@@ -1,10 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
-  findOwnedIssue,
   findOwnedGoal,
   findOwnedAgent,
   findOwnedAgentWithDetails,
-  findOwnedApproval,
 } from '../utils/ownership.js';
 
 // Build a fake drizzle-like query builder that resolves to the given rows.
@@ -23,31 +21,6 @@ function makeMockDb(resolvedRows: unknown[]) {
 }
 
 const COMPANY_ID = 'company-uuid-001';
-
-// --- findOwnedIssue ---
-describe('findOwnedIssue', () => {
-  it('should return the row when the issue belongs to the company', async () => {
-    const row = { id: 'issue-uuid-001' };
-    const db = makeMockDb([row]);
-    const result = await findOwnedIssue(db, COMPANY_ID, 'issue-uuid-001');
-    expect(result).toEqual(row);
-  });
-
-  it('should return null when no matching issue is found', async () => {
-    const db = makeMockDb([]);
-    const result = await findOwnedIssue(db, COMPANY_ID, 'nonexistent-id');
-    expect(result).toBeNull();
-  });
-
-  it('should call select/from/where/limit on the db', async () => {
-    const db = makeMockDb([]);
-    await findOwnedIssue(db, COMPANY_ID, 'issue-uuid-001');
-    expect(db.select).toHaveBeenCalled();
-    expect(db.from).toHaveBeenCalled();
-    expect(db.where).toHaveBeenCalled();
-    expect(db.limit).toHaveBeenCalledWith(1);
-  });
-});
 
 // --- findOwnedGoal ---
 describe('findOwnedGoal', () => {
@@ -117,31 +90,3 @@ describe('findOwnedAgentWithDetails', () => {
   });
 });
 
-// --- findOwnedApproval ---
-describe('findOwnedApproval', () => {
-  it('should return { id, issue_id } when approval belongs to the company', async () => {
-    const row = { id: 'approval-uuid-001', issue_id: 'issue-uuid-001' };
-    const db = makeMockDb([row]);
-    const result = await findOwnedApproval(db, COMPANY_ID, 'approval-uuid-001');
-    expect(result).toEqual(row);
-    expect(result?.issue_id).toBe('issue-uuid-001');
-  });
-
-  it('should return null when approval is not found', async () => {
-    const db = makeMockDb([]);
-    const result = await findOwnedApproval(db, COMPANY_ID, 'unknown-approval');
-    expect(result).toBeNull();
-  });
-
-  it('should perform an innerJoin (approvals → issues)', async () => {
-    const db = makeMockDb([]);
-    await findOwnedApproval(db, COMPANY_ID, 'a1');
-    expect(db.innerJoin).toHaveBeenCalled();
-  });
-
-  it('should call limit(1)', async () => {
-    const db = makeMockDb([]);
-    await findOwnedApproval(db, COMPANY_ID, 'a1');
-    expect(db.limit).toHaveBeenCalledWith(1);
-  });
-});
