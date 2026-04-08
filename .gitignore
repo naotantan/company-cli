@@ -32,3 +32,5 @@ test-results-e2e/
 playwright-report-e2e/
 packages/ui/playwright-report/
 e2e/test-results/
+e2e/playwright-report/
+packages/ui/tests/e2e/test-results/
